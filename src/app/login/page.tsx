@@ -9,6 +9,9 @@ const AuthPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
+  const [socialAuthUser, setSocialAuthUser] = useState<any>(null);
+  const [socialAuthToken, setSocialAuthToken] = useState<string>('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -119,62 +122,69 @@ const AuthPage = () => {
     }
   };
 
-  const handleGoogleAuth = async () => {
+  const handleSocialAuthInitial = async (provider: GoogleAuthProvider | FacebookAuthProvider, providerName: string) => {
     setError('');
     setLoading(true);
 
     try {
-      const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
       const token = await user.getIdToken();
 
-      if (!isLogin) {
-        await sendTokenToBackend(token, {
+      if (isLogin) {
+        // For login, proceed directly
+        await sendTokenToBackend(token);
+        console.log(`${providerName} login successful:`, user);
+      } else {
+        // For sign up, show additional info form
+        setSocialAuthUser(user);
+        setSocialAuthToken(token);
+        setFormData(prev => ({
+          ...prev,
           firstName: user.displayName?.split(' ')[0] || '',
           lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
           email: user.email || '',
-        });
-      } else {
-        await sendTokenToBackend(token);
+        }));
+        setShowAdditionalInfo(true);
       }
-
-      console.log('Google auth successful:', user);
       
     } catch (error: unknown) {
-      console.error('Google auth error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to authenticate with Google.';
+      console.error(`${providerName} auth error:`, error);
+      const errorMessage = error instanceof Error ? error.message : `Failed to authenticate with ${providerName}.`;
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFacebookAuth = async () => {
+  const handleGoogleAuth = () => handleSocialAuthInitial(new GoogleAuthProvider(), 'Google');
+  const handleFacebookAuth = () => handleSocialAuthInitial(new FacebookAuthProvider(), 'Facebook');
+
+  const handleCompleteSocialSignup = async () => {
     setError('');
+
+    if (!formData.phoneNumber || !formData.dateOfBirth || !formData.gender) {
+      setError('Please fill in all required fields to complete your registration.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const provider = new FacebookAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-      const token = await user.getIdToken();
+      await sendTokenToBackend(socialAuthToken, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
+      });
 
-      if (!isLogin) {
-        await sendTokenToBackend(token, {
-          firstName: user.displayName?.split(' ')[0] || '',
-          lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-          email: user.email || '',
-        });
-      } else {
-        await sendTokenToBackend(token);
-      }
-
-      console.log('Facebook auth successful:', user);
+      console.log('Social sign up completed:', socialAuthUser);
       
     } catch (error: unknown) {
-      console.error('Facebook auth error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to authenticate with Facebook.';
+      console.error('Complete signup error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to complete registration. Please try again.';
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -184,6 +194,9 @@ const AuthPage = () => {
   const toggleAuthMode = () => {
     setIsLogin(!isLogin);
     setError('');
+    setShowAdditionalInfo(false);
+    setSocialAuthUser(null);
+    setSocialAuthToken('');
   };
 
   return (
@@ -205,12 +218,14 @@ const AuthPage = () => {
           <div className="absolute inset-0 "></div>
           <div className="absolute top-20 left-12 text-white max-w-md">
             <h2 className="text-4xl font-bold mb-4 text-green-900">
-              {isLogin ? 'Welcome Back' : 'Join Aethercare'}
+              {showAdditionalInfo ? 'Almost There!' : isLogin ? 'Welcome Back' : 'Join Aethercare'}
             </h2>
             <p className="text-lg text-green-800">
-              {isLogin 
-                ? 'Access your Aethercare account to manage your healthcare journey.' 
-                : 'Start your journey to better healthcare management today.'}
+              {showAdditionalInfo 
+                ? 'Just a few more details to complete your registration.' 
+                : isLogin 
+                  ? 'Access your Aethercare account to manage your healthcare journey.' 
+                  : 'Start your journey to better healthcare management today.'}
             </p>
           </div>
         </div>
@@ -220,7 +235,11 @@ const AuthPage = () => {
           <div className="w-full max-w-md">
             <div className="text-center mb-6">
               <p className="text-gray-600 text-sm">
-                {isLogin ? 'Enter your credentials to access your account' : 'Fill in your details to get started'}
+                {showAdditionalInfo 
+                  ? 'Complete your profile to get started' 
+                  : isLogin 
+                    ? 'Enter your credentials to access your account' 
+                    : 'Fill in your details to get started'}
               </p>
             </div>
 
@@ -231,8 +250,75 @@ const AuthPage = () => {
               </div>
             )}
 
-            {/* Login Form */}
-            {isLogin ? (
+            {/* Additional Info Form for Social Auth */}
+            {showAdditionalInfo ? (
+              <div className="space-y-3.5">
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg mb-4">
+                  <p className="text-sm text-green-800">
+                    <strong>Welcome, {formData.firstName}!</strong> Please provide the following information to complete your registration.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="phoneNumber" className="block text-sm font-semibold text-green-800 mb-1.5">
+                    Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    id="phoneNumber"
+                    name="phoneNumber"
+                    value={formData.phoneNumber}
+                    onChange={handleInputChange}
+                    className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm"
+                    placeholder="+1 (555) 123-4567"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="dateOfBirth" className="block text-sm font-semibold text-green-800 mb-1.5">
+                    Date of Birth *
+                  </label>
+                  <input
+                    type="date"
+                    id="dateOfBirth"
+                    name="dateOfBirth"
+                    value={formData.dateOfBirth}
+                    onChange={handleInputChange}
+                    className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="gender" className="block text-sm font-semibold text-green-800 mb-1.5">
+                    Gender *
+                  </label>
+                  <select
+                    id="gender"
+                    name="gender"
+                    value={formData.gender}
+                    onChange={handleInputChange}
+                    className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm"
+                    disabled={loading}
+                  >
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleCompleteSocialSignup}
+                  disabled={loading}
+                  className="w-full bg-green-700 text-white py-2.5 rounded-lg hover:bg-green-800 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Completing Registration...' : 'Complete Registration'}
+                </button>
+              </div>
+            ) : isLogin ? (
+              /* Login Form */
               <div className="space-y-4">
                 <div>
                   <label htmlFor="email" className="block text-sm font-semibold text-green-800 mb-1.5">
@@ -436,55 +522,60 @@ const AuthPage = () => {
               </div>
             )}
 
-            {/* Divider */}
-            <div className="relative my-5">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-green-200"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500">
-                  {isLogin ? 'Or continue with' : 'Or sign up with'}
-                </span>
-              </div>
-            </div>
+            {/* Social Auth Buttons - Hide when showing additional info */}
+            {!showAdditionalInfo && (
+              <>
+                {/* Divider */}
+                <div className="relative my-5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-green-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-4 bg-white text-gray-500">
+                      {isLogin ? 'Or continue with' : 'Or sign up with'}
+                    </span>
+                  </div>
+                </div>
 
-            {/* Social Auth Buttons */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={handleGoogleAuth}
-                disabled={loading}
-                className="flex items-center justify-center px-4 py-2.5 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                <span className="text-sm font-medium text-gray-700">Google</span>
-              </button>
-              <button
-                onClick={handleFacebookAuth}
-                disabled={loading}
-                className="flex items-center justify-center px-4 py-2.5 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-5 h-5 mr-2" fill="#1877F2" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                </svg>
-                <span className="text-sm font-medium text-gray-700">Facebook</span>
-              </button>
-            </div>
+                {/* Social Auth Buttons */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={handleGoogleAuth}
+                    disabled={loading}
+                    className="flex items-center justify-center px-4 py-2.5 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    <span className="text-sm font-medium text-gray-700">Google</span>
+                  </button>
+                  <button
+                    onClick={handleFacebookAuth}
+                    disabled={loading}
+                    className="flex items-center justify-center px-4 py-2.5 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="#1877F2" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                    <span className="text-sm font-medium text-gray-700">Facebook</span>
+                  </button>
+                </div>
 
-            {/* Toggle Link */}
-            <p className="text-center text-gray-600 mt-5 text-sm">
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <button 
-                onClick={toggleAuthMode}
-                className="text-green-700 hover:text-green-600 font-semibold"
-              >
-                {isLogin ? 'Sign up' : 'Login'}
-              </button>
-            </p>
+                {/* Toggle Link */}
+                <p className="text-center text-gray-600 mt-5 text-sm">
+                  {isLogin ? "Don't have an account? " : 'Already have an account? '}
+                  <button 
+                    onClick={toggleAuthMode}
+                    className="text-green-700 hover:text-green-600 font-semibold"
+                  >
+                    {isLogin ? 'Sign up' : 'Login'}
+                  </button>
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>
