@@ -1,4 +1,5 @@
 "use client"
+import Link from 'next/link';
 import { useState } from 'react';
 
 const Navbar = () => {
@@ -19,9 +20,10 @@ const Navbar = () => {
         
         {/* Desktop Buttons */}
         <div className="hidden md:flex space-x-3 lg:space-x-4">
+          <Link href="/login">
           <button className="text-green-800 border-2 border-green-800 px-4 lg:px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium text-sm lg:text-base">
             Login
-          </button>
+          </button></Link>
           <button className="bg-green-700 text-white px-4 lg:px-6 py-2 rounded-full hover:bg-green-800 transition-colors font-medium text-sm lg:text-base">
             Get Started
           </button>
