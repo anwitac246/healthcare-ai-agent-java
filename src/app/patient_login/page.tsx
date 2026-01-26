@@ -25,21 +25,69 @@ const AuthPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const sendTokenToBackend = async (token: string, userData?: any) => {
+  // Backend API Base URL
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+  const sendRegistrationToBackend = async (firebaseUid: string, token: string, userData: any) => {
     try {
-      const endpoint = isLogin ? 'verify' : 'register';
-      const response = await fetch(`YOUR_BACKEND_URL/api/auth/${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ token, userData }),
+        body: JSON.stringify({
+          firebaseUid: firebaseUid,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          email: userData.email,
+          role: 'PATIENT', // Always PATIENT for this page
+          phoneNumber: userData.phoneNumber,
+          dateOfBirth: userData.dateOfBirth,
+          gender: userData.gender,
+        }),
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Registration failed');
+      }
       
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Error sending token to backend:', error);
+      console.error('Error registering user:', error);
+      throw error;
+    }
+  };
+
+  const sendLoginToBackend = async (firebaseUid: string, token: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/patient/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          firebaseUid: firebaseUid
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Login failed');
+      }
+      
+      const data = await response.json();
+      
+      // Store token in localStorage for future API calls
+      localStorage.setItem('authToken', token);
+      localStorage.setItem('userData', JSON.stringify(data.data));
+      
+      return data;
+    } catch (error) {
+      console.error('Error during login:', error);
       throw error;
     }
   };
@@ -60,8 +108,14 @@ const AuthPage = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       const token = await user.getIdToken();
-      await sendTokenToBackend(token);
-      console.log('Login successful:', user);
+      
+      // Send to backend for verification
+      const response = await sendLoginToBackend(user.uid, token);
+      
+      console.log('Patient login successful:', response);
+      
+      // Redirect to patient dashboard
+      window.location.href = '/patient/dashboard';
       
     } catch (error: unknown) {
       console.error('Login error:', error);
@@ -90,9 +144,15 @@ const AuthPage = () => {
       return;
     }
 
+    if (!formData.phoneNumber || !formData.dateOfBirth || !formData.gender) {
+      setError('Please fill in all required fields.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // Create Firebase account
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
 
@@ -102,7 +162,8 @@ const AuthPage = () => {
 
       const token = await user.getIdToken();
 
-      await sendTokenToBackend(token, {
+      // Register in backend
+      const response = await sendRegistrationToBackend(user.uid, token, {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -111,7 +172,14 @@ const AuthPage = () => {
         gender: formData.gender,
       });
 
-      console.log('Sign up successful:', user);
+      console.log('Sign up successful:', response);
+      
+      // Store token
+      localStorage.setItem('authToken', token);
+      localStorage.setItem('userData', JSON.stringify(response.data));
+      
+      // Redirect to patient dashboard
+      window.location.href = '/patient/dashboard';
 
     } catch (error: unknown) {
       console.error('Sign up error:', error);
@@ -132,11 +200,25 @@ const AuthPage = () => {
       const token = await user.getIdToken();
 
       if (isLogin) {
-        // For login, proceed directly
-        await sendTokenToBackend(token);
-        console.log(`${providerName} login successful:`, user);
+        // Try to login
+        try {
+          const response = await sendLoginToBackend(user.uid, token);
+          console.log(`${providerName} login successful:`, response);
+          window.location.href = '/patient/dashboard';
+        } catch (loginError) {
+          // User doesn't exist, need to register
+          setSocialAuthUser(user);
+          setSocialAuthToken(token);
+          setFormData(prev => ({
+            ...prev,
+            firstName: user.displayName?.split(' ')[0] || '',
+            lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+            email: user.email || '',
+          }));
+          setShowAdditionalInfo(true);
+        }
       } else {
-        // For sign up, show additional info form
+        // Sign up flow
         setSocialAuthUser(user);
         setSocialAuthToken(token);
         setFormData(prev => ({
@@ -171,7 +253,7 @@ const AuthPage = () => {
     setLoading(true);
 
     try {
-      await sendTokenToBackend(socialAuthToken, {
+      const response = await sendRegistrationToBackend(socialAuthUser.uid, socialAuthToken, {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -180,7 +262,12 @@ const AuthPage = () => {
         gender: formData.gender,
       });
 
-      console.log('Social sign up completed:', socialAuthUser);
+      console.log('Social sign up completed:', response);
+      
+      localStorage.setItem('authToken', socialAuthToken);
+      localStorage.setItem('userData', JSON.stringify(response.data));
+      
+      window.location.href = '/patient/dashboard';
       
     } catch (error: unknown) {
       console.error('Complete signup error:', error);

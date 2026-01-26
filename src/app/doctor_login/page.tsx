@@ -1,6 +1,8 @@
 "use client"
 import { useState } from 'react';
 import Navbar from '../components/navbar';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '../../../firebase-config';
 
 const DoctorLoginPage = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -22,6 +24,73 @@ const DoctorLoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+  const sendRegistrationToBackend = async (firebaseUid: string, token: string, userData: any) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          firebaseUid: firebaseUid,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          email: userData.email,
+          role: 'DOCTOR', // Always DOCTOR for this page
+          phoneNumber: userData.phoneNumber,
+          medicalLicenseNumber: userData.medicalLicenseNumber,
+          specialization: userData.specialization,
+          clinicLocation: userData.clinicLocation,
+          yearsOfExperience: parseInt(userData.yearsOfExperience),
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Registration failed');
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error registering doctor:', error);
+      throw error;
+    }
+  };
+
+  const sendLoginToBackend = async (firebaseUid: string, token: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/doctor/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          firebaseUid: firebaseUid
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Login failed');
+      }
+      
+      const data = await response.json();
+      
+      localStorage.setItem('authToken', token);
+      localStorage.setItem('userData', JSON.stringify(data.data));
+      
+      return data;
+    } catch (error) {
+      console.error('Error during doctor login:', error);
+      throw error;
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -35,11 +104,15 @@ const DoctorLoginPage = () => {
     setLoading(true);
 
     try {
-      // Your Firebase login logic here
-      console.log('Login attempt with:', email);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Doctor login successful');
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      const token = await user.getIdToken();
+      
+      const response = await sendLoginToBackend(user.uid, token);
+      
+      console.log('Doctor login successful:', response);
+      
+      window.location.href = '/doctor/dashboard';
       
     } catch (error: unknown) {
       console.error('Login error:', error);
@@ -76,11 +149,32 @@ const DoctorLoginPage = () => {
     setLoading(true);
 
     try {
-      // Your Firebase signup logic here
-      console.log('Sign up attempt with:', formData);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Doctor sign up successful');
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const user = userCredential.user;
+
+      await updateProfile(user, {
+        displayName: `${formData.firstName} ${formData.lastName}`
+      });
+
+      const token = await user.getIdToken();
+
+      const response = await sendRegistrationToBackend(user.uid, token, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        medicalLicenseNumber: formData.medicalLicenseNumber,
+        specialization: formData.specialization,
+        clinicLocation: formData.clinicLocation,
+        yearsOfExperience: formData.yearsOfExperience,
+      });
+
+      console.log('Doctor sign up successful:', response);
+      
+      localStorage.setItem('authToken', token);
+      localStorage.setItem('userData', JSON.stringify(response.data));
+      
+      window.location.href = '/doctor/dashboard';
 
     } catch (error: unknown) {
       console.error('Sign up error:', error);
