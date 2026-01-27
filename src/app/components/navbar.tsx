@@ -8,7 +8,7 @@ const Navbar = () => {
   return (
     <nav className="absolute top-0 left-0 right-0 z-20 px-4 sm:px-8 py-4 sm:py-6">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="text-xl sm:text-2xl font-bold text-green-900">Aethercare</div>
+        <Link href ="/"><div className="text-xl sm:text-2xl font-bold text-green-900">Aethercare</div></Link>
         
         {/* Desktop Navigation */}
         <div className="hidden md:flex space-x-6 lg:space-x-8">
