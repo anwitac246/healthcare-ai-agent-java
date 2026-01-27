@@ -5,7 +5,7 @@ import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
 
 @Configuration
-@EnableMongoRepositories(basePackages = "com.aethercare.backend.user.repository")
+@EnableMongoRepositories(basePackages = "com.aethercare.backend")
 @EnableMongoAuditing
 public class MongoConfig {
 }

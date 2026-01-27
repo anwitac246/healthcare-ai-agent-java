@@ -6,6 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../../../firebase-config'; 
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import Navbar from '@/app/components/navbar';
 
 // Types
 interface UserOverview {
@@ -17,14 +18,14 @@ interface UserOverview {
 interface RecentDiagnosis {
   id: string;
   query: string;
-  status: 'completed' | 'failed' | 'processing';
+  status: 'COMPLETED' | 'FAILED' | 'PROCESSING';
   timestamp: string;
 }
 
 interface Appointment {
   id: string;
   doctorName: string;
-  mode: 'online' | 'in-person';
+  mode: 'ONLINE' | 'IN_PERSON';
   appointmentDateTime: string;
   specialty?: string;
 }
@@ -36,14 +37,20 @@ interface DashboardData {
 }
 
 // API Helper
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 async function fetchDashboardData(): Promise<DashboardData> {
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
   
+  console.log('Fetching dashboard data for user:', user.uid);
+  
   const idToken = await user.getIdToken();
-  const response = await fetch(`${API_BASE_URL}/api/dashboard`, {
+  const url = `${API_BASE_URL}/api/dashboard/patient`;
+  
+  console.log('Making request to:', url);
+  
+  const response = await fetch(url, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -51,13 +58,26 @@ async function fetchDashboardData(): Promise<DashboardData> {
     },
   });
   
+  console.log('Response status:', response.status);
+  console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+  
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Error response body:', errorText);
+    
     if (response.status === 401) throw new Error('Unauthorized - Please log in again');
     if (response.status === 404) throw new Error('User data not found');
-    throw new Error('Failed to fetch dashboard data');
+    throw new Error(`Failed to fetch dashboard data: ${response.status} ${errorText}`);
   }
   
-  return response.json();
+  const result = await response.json();
+  console.log('API Response:', result);
+  
+  // Handle both wrapped and unwrapped responses
+  const data = result.data || result;
+  console.log('Parsed data:', data);
+  
+  return data;
 }
 
 // UI Components
@@ -77,17 +97,17 @@ function CardTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="text-lg font-semibold text-gray-800">{children}</h2>;
 }
 
-function StatusBadge({ status }: { status: 'completed' | 'failed' | 'processing' }) {
+function StatusBadge({ status }: { status: 'COMPLETED' | 'FAILED' | 'PROCESSING' }) {
   const styles = {
-    completed: 'bg-green-100 text-green-700 border-green-200',
-    failed: 'bg-red-100 text-red-700 border-red-200',
-    processing: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    COMPLETED: 'bg-green-100 text-green-700 border-green-200',
+    FAILED: 'bg-red-100 text-red-700 border-red-200',
+    PROCESSING: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   };
 
   const labels = {
-    completed: 'Completed',
-    failed: 'Failed',
-    processing: 'Processing',
+    COMPLETED: 'Completed',
+    FAILED: 'Failed',
+    PROCESSING: 'Processing',
   };
 
   return (
@@ -98,52 +118,62 @@ function StatusBadge({ status }: { status: 'completed' | 'failed' | 'processing'
 }
 
 // Main Dashboard Component
-export default function DashboardPage() {
+export default function PatientDashboardPage() {
   const router = useRouter();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // Auth Guard
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    console.log('Setting up auth listener...');
+    
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed:', user ? `User ${user.uid}` : 'No user');
+      setAuthChecked(true);
+      
       if (!user) {
-        router.push('/login');
+        console.log('No user, redirecting to login...');
+        router.push('/patient_login');
+        return;
       }
-    });
-    return () => unsubscribe();
-  }, [router]);
 
-  // Fetch Dashboard Data
-  useEffect(() => {
-    async function loadDashboard() {
+      // User is authenticated, fetch dashboard
       try {
         setLoading(true);
         setError(null);
+        console.log('Fetching dashboard for authenticated user...');
         const data = await fetchDashboardData();
+        console.log('Dashboard data loaded successfully');
         setDashboardData(data);
       } catch (err) {
+        console.error('Error loading dashboard:', err);
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       } finally {
         setLoading(false);
       }
-    }
-    loadDashboard();
-  }, []);
+    });
 
-  // Loading State
-  if (loading) {
+    return () => {
+      console.log('Cleaning up auth listener');
+      unsubscribe();
+    };
+  }, [router]);
+
+  if (!authChecked || loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-green-200 border-t-green-600 rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your dashboard...</p>
+          <p className="text-xs text-gray-400 mt-2">
+            {!authChecked ? 'Checking authentication...' : 'Fetching data...'}
+          </p>
         </div>
       </div>
     );
   }
 
-  // Error State
   if (error) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -155,33 +185,45 @@ export default function DashboardPage() {
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Dashboard</h2>
           <p className="text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-          >
-            Retry
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => {
+                console.log('Opening browser console for debugging');
+                alert('Please check the browser console (F12) for detailed error logs');
+              }}
+              className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm"
+            >
+              View Debug Info
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!dashboardData) return null;
+  if (!dashboardData) {
+    console.warn('No dashboard data available');
+    return null;
+  }
 
   const { userOverview, recentDiagnoses, upcomingAppointments } = dashboardData;
 
   return (
     <div className="min-h-screen bg-white">
+      <Navbar/>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <div className="my-20">
+          <h1 className="text-3xl font-bold text-gray-900">Patient Dashboard</h1>
           <p className="text-gray-600 mt-1">Manage your health journey</p>
         </div>
 
-        {/* Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - User Overview */}
           <div className="lg:col-span-1">
             <Card>
               <CardHeader>
@@ -206,9 +248,7 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Right Column - Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Recent Health Queries */}
             <Card>
               <CardHeader>
                 <CardTitle>Recent Health Queries</CardTitle>
@@ -237,7 +277,6 @@ export default function DashboardPage() {
               )}
             </Card>
 
-            {/* Upcoming Appointments */}
             <Card>
               <CardHeader>
                 <CardTitle>Upcoming Appointments</CardTitle>
@@ -275,9 +314,9 @@ export default function DashboardPage() {
                           </span>
                           <span className="text-xs text-gray-400">•</span>
                           <span className={`text-xs font-medium ${
-                            appointment.mode === 'online' ? 'text-green-600' : 'text-blue-600'
+                            appointment.mode === 'ONLINE' ? 'text-green-600' : 'text-blue-600'
                           }`}>
-                            {appointment.mode === 'online' ? 'Online' : 'In-Person'}
+                            {appointment.mode === 'ONLINE' ? 'Online' : 'In-Person'}
                           </span>
                         </div>
                       </div>
@@ -289,7 +328,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Quick Actions - Full Width */}
         <div className="mt-6">
           <Card>
             <CardHeader>
