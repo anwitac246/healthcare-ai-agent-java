@@ -21,6 +21,13 @@ groq:
     url: https://api.groq.com/openai/v1/chat/completions
   model: llama-3.3-70b-versatile
 
+pubmed:
+  api:
+    base-url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils
+    email: ${PUBMED_EMAIL:support@aethercare.com}
+    tool: AetherCare
+    timeout-seconds: 30
+
 cors:
   allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
 

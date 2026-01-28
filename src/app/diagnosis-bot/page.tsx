@@ -3,12 +3,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Mic, Plus, MessageSquare } from 'lucide-react';
 import Navbar from "../components/navbar";
+import { MarkdownMessage } from '../components/MarkdownMessage';
+
 interface Message {
   id: string;
-  text: string;
-  sender: 'user' | 'bot';
+  role: 'user' | 'assistant' | 'system';
+  content: string;
   timestamp: Date;
   confidence?: number;
+  documentInfo?: {
+    fileName: string;
+    fileType: string;
+  };
 }
 
 interface Chat {
@@ -40,9 +46,10 @@ export default function DiagnosisBot() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string>('');
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +78,7 @@ export default function DiagnosisBot() {
       timestamp: new Date(),
     };
     setChats([initialChat]);
-    setCurrentChatId(initialChatId);
+    setConversationId(initialChatId);
   };
 
   const scrollToBottom = () => {
@@ -79,19 +86,19 @@ export default function DiagnosisBot() {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: input,
-      sender: 'user',
+      role: 'user',
+      content: input,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
     const currentInput = input;
     setInput('');
-    setLoading(true);
+    setIsLoading(true);
     setError(null);
 
     try {
@@ -109,10 +116,10 @@ export default function DiagnosisBot() {
         },
         body: JSON.stringify({
           message: currentInput,
-          conversationId: currentChatId,
+          conversationId: conversationId,
           history: messages.map(m => ({
-            role: m.sender === 'user' ? 'user' : 'assistant',
-            content: m.text
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content
           }))
         }),
       });
@@ -127,36 +134,40 @@ export default function DiagnosisBot() {
       const data = await response.json();
       const botResponse = data.data;
 
-      const botMessage: Message = {
+      const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: botResponse.message || 'I apologize, but I could not generate a response.',
-        sender: 'bot',
+        role: 'assistant',
+        content: botResponse.message || 'I apologize, but I could not generate a response.',
         timestamp: new Date(),
         confidence: botResponse.confidence,
       };
-      
-      setMessages(prev => [...prev, botMessage]);
 
-      setChats(prev => prev.map(chat => 
-        chat.id === currentChatId 
+      setMessages(prev => [...prev, assistantMessage]);
+
+      if (botResponse.conversationId && !conversationId) {
+        setConversationId(botResponse.conversationId);
+      }
+
+      // Update chat history
+      setChats(prev => prev.map(chat =>
+        chat.id === conversationId
           ? { ...chat, lastMessage: currentInput, timestamp: new Date() }
           : chat
       ));
-      
     } catch (err) {
-      console.error('Error:', err);
+      console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMsg);
       
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: `Error: ${errorMsg}. Please try again.`,
-        sender: 'bot',
+        role: 'system',
+        content: `Error: ${errorMsg}. Please try again.`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -169,7 +180,7 @@ export default function DiagnosisBot() {
       timestamp: new Date(),
     };
     setChats(prev => [newChat, ...prev]);
-    setCurrentChatId(newChatId);
+    setConversationId(newChatId);
     setMessages([]);
     setInput('');
     setError(null);
@@ -187,22 +198,37 @@ export default function DiagnosisBot() {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    
-    const file = e.target.files[0];
-    
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'text/plain', 'image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Only PDF, TXT, PNG, and JPEG files are supported');
+      return;
+    }
+
+    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       setError('File size must be less than 10MB');
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.pdf') && !file.name.toLowerCase().endsWith('.txt')) {
-      setError('Only PDF and TXT files are supported');
-      return;
-    }
-
-    setLoading(true);
+    setUploadingFile(true);
     setError(null);
+
+    // Show upload notification
+    const uploadNotification: Message = {
+      id: Date.now().toString(),
+      role: 'system',
+      content: `Uploading document: ${file.name}...`,
+      timestamp: new Date(),
+      documentInfo: {
+        fileName: file.name,
+        fileType: file.type
+      }
+    };
+    setMessages(prev => [...prev, uploadNotification]);
 
     try {
       const token = await getAuthToken();
@@ -213,7 +239,10 @@ export default function DiagnosisBot() {
 
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('conversationId', currentChatId);
+      formData.append('conversationId', conversationId || '');
+      if (input) {
+        formData.append('message', input);
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/chatbot/upload-document`, {
         method: 'POST',
@@ -229,21 +258,50 @@ export default function DiagnosisBot() {
 
       const data = await response.json();
 
+      // Remove upload notification
+      setMessages(prev => prev.filter(msg => msg.id !== uploadNotification.id));
+
+      // Add document uploaded message
       const documentMessage: Message = {
         id: Date.now().toString(),
-        text: `📄 **Document Uploaded**: ${file.name}\n\n**Analysis**:\n${data.data}`,
-        sender: 'bot',
+        role: 'user',
+        content: `Document uploaded: ${file.name}`,
+        timestamp: new Date(),
+        documentInfo: {
+          fileName: file.name,
+          fileType: file.type
+        }
+      };
+
+      // Add analysis response
+      const analysisMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.data || 'Document uploaded successfully.',
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, documentMessage]);
-      
+      setMessages(prev => [...prev, documentMessage, analysisMessage]);
+
+      if (data.conversationId && !conversationId) {
+        setConversationId(data.conversationId);
+      }
     } catch (err) {
-      console.error('Document upload error:', err);
+      console.error('Failed to upload document:', err);
+      setMessages(prev => prev.filter(msg => msg.id !== uploadNotification.id));
       const errorMsg = err instanceof Error ? err.message : 'Upload failed';
       setError(errorMsg);
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'system',
+        content: `Failed to upload document: ${errorMsg}. Please try again.`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setLoading(false);
+      setUploadingFile(false);
+      setInput('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -312,11 +370,12 @@ export default function DiagnosisBot() {
     <div className="flex flex-col h-screen bg-white">
       <Navbar/>
       <div className="flex flex-1 overflow-hidden mt-20">
+        {/* Sidebar */}
         <div className="w-64 bg-white border-r border-green-800/20 flex flex-col">
           <div className="p-4 border-b border-green-800/20">
             <button
               onClick={handleNewChat}
-              disabled={loading}
+              disabled={isLoading || uploadingFile}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-800 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               <Plus size={20} />
@@ -332,11 +391,11 @@ export default function DiagnosisBot() {
               <button
                 key={chat.id}
                 onClick={() => {
-                  setCurrentChatId(chat.id);
+                  setConversationId(chat.id);
                   setMessages([]);
                 }}
                 className={`w-full text-left p-3 rounded-lg mb-2 transition-colors ${
-                  currentChatId === chat.id
+                  conversationId === chat.id
                     ? 'bg-green-50 border border-green-800/30'
                     : 'hover:bg-green-50/50 border border-transparent'
                 }`}
@@ -357,6 +416,7 @@ export default function DiagnosisBot() {
           </div>
         </div>
 
+        {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
           <div className="flex-1 overflow-y-auto p-6">
             {error && (
@@ -386,26 +446,50 @@ export default function DiagnosisBot() {
                   <div
                     key={message.id}
                     className={`flex ${
-                      message.sender === 'user' ? 'justify-end' : 'justify-start'
+                      message.role === 'user' ? 'justify-end' : 'justify-start'
                     }`}
                   >
                     <div
                       className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                        message.sender === 'user'
+                        message.role === 'user'
                           ? 'bg-green-800 text-white'
+                          : message.role === 'system'
+                          ? 'bg-gray-50 border border-gray-200 text-gray-600'
                           : 'bg-green-50 text-green-900 border border-green-800/10'
                       }`}
                     >
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+                      {message.documentInfo && (
+                        <div className="mb-2 pb-2 border-b border-green-800/20">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="text-sm font-medium">
+                              {message.documentInfo.fileName}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <MarkdownMessage
+                        content={message.content}
+                        isUser={message.role === 'user'}
+                      />
+
                       {message.confidence && (
                         <p className="text-xs mt-2 opacity-70">
                           Confidence: {Math.round(message.confidence)}%
                         </p>
                       )}
+                      
+                      <div className="text-xs opacity-70 mt-2">
+                        {message.timestamp.toLocaleTimeString()}
+                      </div>
                     </div>
                   </div>
                 ))}
-                {loading && (
+                
+                {isLoading && (
                   <div className="flex justify-start">
                     <div className="bg-green-50 rounded-2xl px-4 py-3 border border-green-800/10">
                       <div className="flex gap-1">
@@ -416,11 +500,13 @@ export default function DiagnosisBot() {
                     </div>
                   </div>
                 )}
+                
                 <div ref={messagesEndRef} />
               </div>
             )}
           </div>
 
+          {/* Input Area */}
           <div className="border-t border-green-800/20 bg-white p-4">
             <div className="max-w-4xl mx-auto">
               <div className="flex items-end gap-2">
@@ -429,13 +515,13 @@ export default function DiagnosisBot() {
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   className="hidden"
-                  accept=".pdf,.txt"
+                  accept=".pdf,.txt,.png,.jpg,.jpeg"
                 />
                 <button
                   onClick={handleFileAttach}
                   className="p-3 rounded-lg border border-green-800/20 text-green-800 hover:bg-green-50 transition-colors shrink-0 disabled:opacity-50"
-                  title="Attach files"
-                  disabled={loading}
+                  title="Attach files (PDF, TXT, PNG, JPEG)"
+                  disabled={isLoading || uploadingFile}
                 >
                   <Paperclip size={20} />
                 </button>
@@ -448,7 +534,7 @@ export default function DiagnosisBot() {
                     placeholder="Describe your symptoms..."
                     className="w-full px-5 py-2.5 border border-green-800/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700 focus:border-transparent resize-none text-green-900 placeholder-green-700/50"
                     rows={1}
-                    disabled={loading}
+                    disabled={isLoading || uploadingFile}
                     style={{
                       height: '48px',
                       maxHeight: '120px',
@@ -464,7 +550,7 @@ export default function DiagnosisBot() {
                       : 'border-green-800/20 text-green-800 hover:bg-green-50'
                   }`}
                   title="Voice input"
-                  disabled={loading}
+                  disabled={isLoading || uploadingFile}
                 >
                   <Mic size={20} />
                 </button>
@@ -472,11 +558,15 @@ export default function DiagnosisBot() {
                 <button
                   onClick={handleSend}
                   className="p-3 rounded-lg bg-green-800 text-white hover:bg-green-700 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!input.trim() || loading}
+                  disabled={!input.trim() || isLoading || uploadingFile}
                   title="Send message"
                 >
                   <Send size={20} />
                 </button>
+              </div>
+              
+              <div className="text-xs text-green-700/70 mt-2">
+                Supported formats: PDF, TXT, PNG, JPEG (max 10MB)
               </div>
             </div>
           </div>

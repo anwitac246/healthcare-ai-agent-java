@@ -16,6 +16,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -35,13 +37,16 @@ public class ChatbotController {
         log.info("Chat request from user: {}", userDetails.getFirebaseUid());
         
         try {
+            // Build context with chat history
             ConversationContext initialContext = contextService.buildContext(
                 request,
                 userDetails.getFirebaseUid()
             );
             
+            // Process through agent chain
             ConversationContext finalContext = orchestrator.processMessage(initialContext);
             
+            // Save messages with context
             contextService.saveMessage(finalContext, "user", request.getMessage());
             contextService.saveMessage(finalContext, "assistant", finalContext.getDiagnosisSummary());
             
@@ -66,12 +71,15 @@ public class ChatbotController {
     }
     
     @PostMapping("/upload-document")
-    public ResponseEntity<ApiResponse<String>> uploadDocument(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) String conversationId,
+            @RequestParam(required = false) String message,
             @AuthenticationPrincipal FirebaseUserDetails userDetails
     ) {
-        log.info("Document upload from user: {}", userDetails.getFirebaseUid());
+        log.info("Document upload from user: {} - file: {}", 
+                userDetails.getFirebaseUid(), 
+                file.getOriginalFilename());
         
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(
@@ -87,11 +95,48 @@ public class ChatbotController {
         }
         
         try {
-            String analysis = documentParser.parseDocument(file);
+            // Parse document
+            DocumentParser.DocumentParseResult parseResult = documentParser.parseDocument(file);
+            
+            // Build context with document
+            ChatRequest chatRequest = new ChatRequest();
+            chatRequest.setMessage(message != null ? message : "Please analyze this document");
+            chatRequest.setConversationId(conversationId);
+            
+            ConversationContext initialContext = contextService.buildContext(
+                chatRequest,
+                userDetails.getFirebaseUid()
+            );
+            
+            // Add document metadata to context
+            Map<String, Object> metadata = new HashMap<>(initialContext.getAgentMetadata());
+            metadata.putAll(parseResult.toMetadata());
+            
+            ConversationContext contextWithDoc = initialContext.toBuilder()
+                .agentMetadata(metadata)
+                .build();
+            
+            // Process through agent chain
+            ConversationContext finalContext = orchestrator.processMessage(contextWithDoc);
+            
+            // Save messages
+            String uploadNotification = String.format("Document uploaded: %s (%s)", 
+                    parseResult.getFileName(), 
+                    parseResult.getFileType());
+            contextService.saveMessage(finalContext, "user", uploadNotification);
+            contextService.saveMessage(finalContext, "assistant", finalContext.getDiagnosisSummary());
+            
+            // Prepare response
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("analysis", finalContext.getDiagnosisSummary());
+            responseData.put("fileName", parseResult.getFileName());
+            responseData.put("fileType", parseResult.getFileType());
+            responseData.put("conversationId", finalContext.getConversationId());
+            responseData.put("confidence", finalContext.getConfidenceScore());
             
             return ResponseEntity.ok(ApiResponse.success(
                 "Document analyzed successfully", 
-                analysis
+                responseData
             ));
             
         } catch (Exception e) {
