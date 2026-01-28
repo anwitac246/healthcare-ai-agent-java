@@ -342,7 +342,7 @@ export default function DiagnosisBot() {
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  <MessageSquare size={16} className="text-green-700 mt-1 flex-shrink-0" />
+                  <MessageSquare size={16} className="text-green-700 mt-1 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-green-900 truncate">
                       {chat.title}
@@ -433,7 +433,7 @@ export default function DiagnosisBot() {
                 />
                 <button
                   onClick={handleFileAttach}
-                  className="p-3 rounded-lg border border-green-800/20 text-green-800 hover:bg-green-50 transition-colors flex-shrink-0 disabled:opacity-50"
+                  className="p-3 rounded-lg border border-green-800/20 text-green-800 hover:bg-green-50 transition-colors shrink-0 disabled:opacity-50"
                   title="Attach files"
                   disabled={loading}
                 >
@@ -458,7 +458,7 @@ export default function DiagnosisBot() {
 
                 <button
                   onClick={handleVoiceInput}
-                  className={`p-3 rounded-lg border transition-colors flex-shrink-0 ${
+                  className={`p-3 rounded-lg border transition-colors shrink-0 ${
                     isRecording
                       ? 'bg-green-700 border-green-700 text-white animate-pulse'
                       : 'border-green-800/20 text-green-800 hover:bg-green-50'
@@ -471,7 +471,7 @@ export default function DiagnosisBot() {
 
                 <button
                   onClick={handleSend}
-                  className="p-3 rounded-lg bg-green-800 text-white hover:bg-green-700 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-3 rounded-lg bg-green-800 text-white hover:bg-green-700 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!input.trim() || loading}
                   title="Send message"
                 >

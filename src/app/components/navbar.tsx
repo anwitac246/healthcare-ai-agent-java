@@ -1,14 +1,28 @@
 "use client"
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    
+    const token = localStorage.getItem('authToken');
+    setIsLoggedIn(!!token);
+  }, []);
+
+  const handleLogout = () => {
+  
+    localStorage.removeItem('authToken');
+    setIsLoggedIn(false);
+   
+  };
 
   return (
     <nav className="absolute top-0 left-0 right-0 z-20 px-4 sm:px-8 py-4 sm:py-6">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <Link href ="/"><div className="text-xl sm:text-2xl font-bold text-green-900">Aethercare</div></Link>
+        <Link href="/"><div className="text-xl sm:text-2xl font-bold text-green-900">Aethercare</div></Link>
         
         {/* Desktop Navigation */}
         <div className="hidden md:flex space-x-6 lg:space-x-8">
@@ -20,13 +34,25 @@ const Navbar = () => {
         
         {/* Desktop Buttons */}
         <div className="hidden md:flex space-x-3 lg:space-x-4">
-          <Link href="/login">
-          <button className="text-green-800 border-2 border-green-800 px-4 lg:px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium text-sm lg:text-base">
-            Login
-          </button></Link>
-          <button className="bg-green-700 text-white px-4 lg:px-6 py-2 rounded-full hover:bg-green-800 transition-colors font-medium text-sm lg:text-base">
-            Get Started
-          </button>
+          {isLoggedIn ? (
+            <button 
+              onClick={handleLogout}
+              className="text-green-800 border-2 border-green-800 px-4 lg:px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium text-sm lg:text-base"
+            >
+              Logout
+            </button>
+          ) : (
+            <>
+              <Link href="/login">
+                <button className="text-green-800 border-2 border-green-800 px-4 lg:px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium text-sm lg:text-base">
+                  Login
+                </button>
+              </Link>
+              <button className="bg-green-700 text-white px-4 lg:px-6 py-2 rounded-full hover:bg-green-800 transition-colors font-medium text-sm lg:text-base">
+                Get Started
+              </button>
+            </>
+          )}
         </div>
 
         {/* Mobile Menu Button */}
@@ -56,12 +82,25 @@ const Navbar = () => {
             <a href="#" className="text-green-800 hover:text-green-600 transition-colors py-2 font-medium">Services</a>
             <a href="#" className="text-green-800 hover:text-green-600 transition-colors py-2 font-medium">Contact</a>
             <div className="flex flex-col space-y-3 pt-4 border-t border-green-200">
-              <button className="text-green-800 border-2 border-green-800 px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium">
-                Login
-              </button>
-              <button className="bg-green-700 text-white px-6 py-2 rounded-full hover:bg-green-800 transition-colors font-medium">
-                Get Started
-              </button>
+              {isLoggedIn ? (
+                <button 
+                  onClick={handleLogout}
+                  className="text-green-800 border-2 border-green-800 px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium"
+                >
+                  Logout
+                </button>
+              ) : (
+                <>
+                  <Link href="/login">
+                    <button className="text-green-800 border-2 border-green-800 px-6 py-2 rounded-full hover:bg-green-50 transition-colors font-medium">
+                      Login
+                    </button>
+                  </Link>
+                  <button className="bg-green-700 text-white px-6 py-2 rounded-full hover:bg-green-800 transition-colors font-medium">
+                    Get Started
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
