@@ -22,25 +22,49 @@ public class IntentDetectionAgent implements ChatAgent {
             return AgentResult.failure(getAgentName(), "Empty message");
         }
         
-        String prompt = String.format("""
-            Classify the following patient message into one of these intents:
-            - symptom_query: Patient describing symptoms
-            - follow_up: Follow-up to previous diagnosis
-            - emergency: Life-threatening situation
-            - general_question: Medical information request
-            
-            Message: "%s"
-            
-            Respond with ONLY the intent name, no explanation.
-            """, context.getCurrentMessage());
+        // Build context-aware prompt
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("Classify the following patient message into one of these intents:\n");
+        promptBuilder.append("- symptom_query: Patient describing symptoms or asking about health concerns\n");
+        promptBuilder.append("- follow_up: Follow-up question about previous diagnosis or document\n");
+        promptBuilder.append("- document_question: Question about uploaded medical document\n");
+        promptBuilder.append("- emergency: Life-threatening situation\n");
+        promptBuilder.append("- general_question: General medical information request\n\n");
+        
+        // Add conversation context if available
+        if (context.getMessageHistory() != null && !context.getMessageHistory().isEmpty()) {
+            promptBuilder.append("Previous conversation context:\n");
+            context.getMessageHistory().stream()
+                .limit(3)
+                .forEach(msg -> promptBuilder.append(msg.getRole())
+                    .append(": ")
+                    .append(msg.getContent())
+                    .append("\n"));
+            promptBuilder.append("\n");
+        }
+        
+        // Add document context if available
+        if (context.getDocumentAnalysis() != null && !context.getDocumentAnalysis().isEmpty()) {
+            promptBuilder.append("Note: User has uploaded a medical document.\n\n");
+        }
+        
+        promptBuilder.append("Current message: \"").append(context.getCurrentMessage()).append("\"\n\n");
+        promptBuilder.append("Respond with ONLY the intent name, no explanation.");
+        
+        String prompt = promptBuilder.toString();
         
         try {
             String groqResponse = groqService.complete(prompt);
             String intent = groqResponse.trim().toLowerCase().replaceAll("[^a-z_]", "");
             
             if (intent.isEmpty()) {
-                intent = "general_question";
+                // Default to follow_up if we have history, otherwise general_question
+                intent = (context.getMessageHistory() != null && !context.getMessageHistory().isEmpty()) 
+                    ? "follow_up" 
+                    : "general_question";
             }
+            
+            log.info("Detected intent: {} for message: {}", intent, context.getCurrentMessage());
             
             ConversationContext updatedContext = context.withIntent(intent);
             
@@ -53,7 +77,11 @@ public class IntentDetectionAgent implements ChatAgent {
                 
         } catch (Exception e) {
             log.error("Intent detection failed", e);
-            ConversationContext fallbackContext = context.withIntent("general_question");
+            // Default to follow_up if we have context, otherwise general_question
+            String fallbackIntent = (context.getMessageHistory() != null && !context.getMessageHistory().isEmpty()) 
+                ? "follow_up" 
+                : "general_question";
+            ConversationContext fallbackContext = context.withIntent(fallbackIntent);
             return AgentResult.success(getAgentName(), fallbackContext);
         }
     }

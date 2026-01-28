@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Mic, Plus, MessageSquare } from 'lucide-react';
+import { Send, Paperclip, Mic, Plus, MessageSquare, LogOut } from 'lucide-react';
 import Navbar from "../components/navbar";
 import { MarkdownMessage } from '../components/MarkdownMessage';
+import { useRouter } from 'next/navigation';
 
 interface Message {
   id: string;
@@ -21,28 +22,13 @@ interface Chat {
   id: string;
   title: string;
   lastMessage: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
-async function getAuthToken() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('authToken');
-}
-
-async function getCurrentUser() {
-  if (typeof window === 'undefined') return null;
-  const userDataStr = localStorage.getItem('userData');
-  if (!userDataStr) return null;
-  try {
-    return JSON.parse(userDataStr);
-  } catch {
-    return null;
-  }
-}
-
 export default function DiagnosisBot() {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [chats, setChats] = useState<Chat[]>([]);
@@ -51,34 +37,78 @@ export default function DiagnosisBot() {
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    initializeChat();
+    checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (authToken) {
+      loadConversations();
+    }
+  }, [authToken]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const initializeChat = async () => {
-    const user = await getCurrentUser();
-    if (!user) {
-      window.location.href = '/patient_login';
-      return;
-    }
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userDataStr = localStorage.getItem('userData');
+      
+      if (!token || !userDataStr) {
+        router.push('/patient_login');
+        return;
+      }
 
-    const initialChatId = Date.now().toString();
-    const initialChat: Chat = {
-      id: initialChatId,
-      title: 'New Consultation',
-      lastMessage: '',
-      timestamp: new Date(),
-    };
-    setChats([initialChat]);
-    setConversationId(initialChatId);
+      // Verify token is still valid by making a test request
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        // Token expired or invalid
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        router.push('/patient_login');
+        return;
+      }
+
+      setAuthToken(token);
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      router.push('/patient_login');
+    } finally {
+      setIsAuthChecking(false);
+    }
+  };
+
+  const loadConversations = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/chatbot/conversations`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && Array.isArray(data.data)) {
+          setChats(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    }
   };
 
   const scrollToBottom = () => {
@@ -86,7 +116,7 @@ export default function DiagnosisBot() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !authToken) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -102,58 +132,56 @@ export default function DiagnosisBot() {
     setError(null);
 
     try {
-      const token = await getAuthToken();
-      
-      if (!token) {
-        throw new Error('Not authenticated. Please login again.');
-      }
-
       const response = await fetch(`${API_BASE_URL}/api/chatbot/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({
           message: currentInput,
-          conversationId: conversationId,
-          history: messages.map(m => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: m.content
-          }))
+          conversationId: conversationId
         }),
       });
 
       if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Session expired. Please login again.');
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userData');
+          router.push('/patient_login');
+          return;
         }
         throw new Error('Failed to get response from server');
       }
 
       const data = await response.json();
+      
+      console.log('API Response:', data);
+      
       const botResponse = data.data;
+
+      if (!botResponse || !botResponse.message) {
+        throw new Error('Invalid response format from server');
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: botResponse.message || 'I apologize, but I could not generate a response.',
+        content: botResponse.message,
         timestamp: new Date(),
         confidence: botResponse.confidence,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
 
+      // Set conversation ID if this was first message
       if (botResponse.conversationId && !conversationId) {
         setConversationId(botResponse.conversationId);
       }
 
-      // Update chat history
-      setChats(prev => prev.map(chat =>
-        chat.id === conversationId
-          ? { ...chat, lastMessage: currentInput, timestamp: new Date() }
-          : chat
-      ));
+      // Reload conversations to update sidebar
+      loadConversations();
+
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'An error occurred';
@@ -172,18 +200,40 @@ export default function DiagnosisBot() {
   };
 
   const handleNewChat = () => {
-    const newChatId = Date.now().toString();
-    const newChat: Chat = {
-      id: newChatId,
-      title: 'New Consultation',
-      lastMessage: '',
-      timestamp: new Date(),
-    };
-    setChats(prev => [newChat, ...prev]);
-    setConversationId(newChatId);
+    setConversationId(undefined);
     setMessages([]);
     setInput('');
     setError(null);
+  };
+
+  const loadChat = async (chatId: string) => {
+    if (!authToken) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/chatbot/history/${chatId}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && Array.isArray(data.data)) {
+          const loadedMessages: Message[] = data.data.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp),
+            confidence: msg.confidence
+          })).reverse(); // Reverse to show chronological order
+          
+          setMessages(loadedMessages);
+          setConversationId(chatId);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load chat:', error);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -199,16 +249,14 @@ export default function DiagnosisBot() {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !authToken) return;
 
-    // Validate file type
     const allowedTypes = ['application/pdf', 'text/plain', 'image/png', 'image/jpeg', 'image/jpg'];
     if (!allowedTypes.includes(file.type)) {
       setError('Only PDF, TXT, PNG, and JPEG files are supported');
       return;
     }
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       setError('File size must be less than 10MB');
       return;
@@ -217,7 +265,6 @@ export default function DiagnosisBot() {
     setUploadingFile(true);
     setError(null);
 
-    // Show upload notification
     const uploadNotification: Message = {
       id: Date.now().toString(),
       role: 'system',
@@ -231,15 +278,11 @@ export default function DiagnosisBot() {
     setMessages(prev => [...prev, uploadNotification]);
 
     try {
-      const token = await getAuthToken();
-      
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
-
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('conversationId', conversationId || '');
+      if (conversationId) {
+        formData.append('conversationId', conversationId);
+      }
       if (input) {
         formData.append('message', input);
       }
@@ -247,7 +290,7 @@ export default function DiagnosisBot() {
       const response = await fetch(`${API_BASE_URL}/api/chatbot/upload-document`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: formData,
       });
@@ -258,10 +301,8 @@ export default function DiagnosisBot() {
 
       const data = await response.json();
 
-      // Remove upload notification
       setMessages(prev => prev.filter(msg => msg.id !== uploadNotification.id));
 
-      // Add document uploaded message
       const documentMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
@@ -273,7 +314,6 @@ export default function DiagnosisBot() {
         }
       };
 
-      // Add analysis response
       const analysisMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -282,10 +322,8 @@ export default function DiagnosisBot() {
       };
 
       setMessages(prev => [...prev, documentMessage, analysisMessage]);
+      loadConversations();
 
-      if (data.conversationId && !conversationId) {
-        setConversationId(data.conversationId);
-      }
     } catch (err) {
       console.error('Failed to upload document:', err);
       setMessages(prev => prev.filter(msg => msg.id !== uploadNotification.id));
@@ -366,6 +404,23 @@ export default function DiagnosisBot() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userData');
+    router.push('/patient_login');
+  };
+
+  if (isAuthChecking) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800 mx-auto"></div>
+          <p className="text-green-800 mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-white">
       <Navbar/>
@@ -376,10 +431,18 @@ export default function DiagnosisBot() {
             <button
               onClick={handleNewChat}
               disabled={isLoading || uploadingFile}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-800 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-800 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 mb-2"
             >
               <Plus size={20} />
               <span className="font-medium">New Chat</span>
+            </button>
+            
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-green-800 border border-green-800/20 rounded-lg hover:bg-green-50 transition-colors"
+            >
+              <LogOut size={18} />
+              <span className="text-sm">Logout</span>
             </button>
           </div>
 
@@ -387,32 +450,35 @@ export default function DiagnosisBot() {
             <h3 className="text-xs font-semibold text-green-800 uppercase tracking-wide mb-3 px-2">
               Past Chats
             </h3>
-            {chats.map((chat) => (
-              <button
-                key={chat.id}
-                onClick={() => {
-                  setConversationId(chat.id);
-                  setMessages([]);
-                }}
-                className={`w-full text-left p-3 rounded-lg mb-2 transition-colors ${
-                  conversationId === chat.id
-                    ? 'bg-green-50 border border-green-800/30'
-                    : 'hover:bg-green-50/50 border border-transparent'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <MessageSquare size={16} className="text-green-700 mt-1 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-green-900 truncate">
-                      {chat.title}
-                    </p>
-                    <p className="text-xs text-green-700/70 truncate mt-1">
-                      {chat.lastMessage || 'No messages yet'}
-                    </p>
+            {chats.length === 0 ? (
+              <p className="text-xs text-green-700/70 px-2">No chat history yet</p>
+            ) : (
+              chats.map((chat) => (
+                <button
+                  key={chat.id}
+                  onClick={() => loadChat(chat.id)}
+                  className={`w-full text-left p-3 rounded-lg mb-2 transition-colors ${
+                    conversationId === chat.id
+                      ? 'bg-green-50 border border-green-800/30'
+                      : 'hover:bg-green-50/50 border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <MessageSquare size={16} className="text-green-700 mt-1 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-green-900 truncate">
+                        {chat.title}
+                      </p>
+                      {chat.lastMessage && (
+                        <p className="text-xs text-green-700/70 truncate mt-1">
+                          {chat.lastMessage}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         </div>
 
@@ -422,22 +488,38 @@ export default function DiagnosisBot() {
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-red-600 text-sm">{error}</p>
+                <button 
+                  onClick={() => setError(null)}
+                  className="text-xs text-red-500 underline mt-1"
+                >
+                  Dismiss
+                </button>
               </div>
             )}
 
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center">
-                <div className="text-center">
+                <div className="text-center max-w-2xl">
                   <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
                     <MessageSquare size={32} className="text-green-700" />
                   </div>
                   <h2 className="text-2xl font-semibold text-green-900 mb-2">
-                    Welcome to Diagnosis Bot
+                    AI Medical Assistant
                   </h2>
-                  <p className="text-green-700/70 max-w-md">
-                    Start a conversation to receive medical guidance and support.
-                    I'm here to help you understand your symptoms.
+                  <p className="text-green-700/70">
+                    I'm your AI medical assistant powered by peer-reviewed PubMed research.
+                    Describe your symptoms or upload medical documents for evidence-based analysis.
                   </p>
+                  <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-800/10">
+                      <p className="font-medium text-green-900 mb-1">Evidence-Based</p>
+                      <p className="text-green-700/70 text-xs">All responses backed by medical research</p>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-800/10">
+                      <p className="font-medium text-green-900 mb-1">Document Analysis</p>
+                      <p className="text-green-700/70 text-xs">Upload lab results, reports, or images</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -476,7 +558,7 @@ export default function DiagnosisBot() {
                         isUser={message.role === 'user'}
                       />
 
-                      {message.confidence && (
+                      {message.confidence !== undefined && message.confidence > 0 && (
                         <p className="text-xs mt-2 opacity-70">
                           Confidence: {Math.round(message.confidence)}%
                         </p>
@@ -566,7 +648,7 @@ export default function DiagnosisBot() {
               </div>
               
               <div className="text-xs text-green-700/70 mt-2">
-                Supported formats: PDF, TXT, PNG, JPEG (max 10MB)
+                Powered by PubMed research • Supported formats: PDF, TXT, PNG, JPEG (max 10MB)
               </div>
             </div>
           </div>

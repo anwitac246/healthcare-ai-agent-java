@@ -3,6 +3,7 @@ package com.aethercare.backend.chatbot.controller;
 import com.aethercare.backend.auth.security.FirebaseUserDetails;
 import com.aethercare.backend.chatbot.integration.document.DocumentParser;
 import com.aethercare.backend.chatbot.model.dto.ConversationContext;
+import com.aethercare.backend.chatbot.model.entity.Conversation;
 import com.aethercare.backend.chatbot.model.request.ChatRequest;
 import com.aethercare.backend.chatbot.model.response.ChatResponse;
 import com.aethercare.backend.chatbot.service.context.ConversationContextService;
@@ -15,9 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @RestController
@@ -34,7 +33,9 @@ public class ChatbotController {
             @Valid @RequestBody ChatRequest request,
             @AuthenticationPrincipal FirebaseUserDetails userDetails
     ) {
-        log.info("Chat request from user: {}", userDetails.getFirebaseUid());
+        log.info("Chat request from user: {} - message: {}", 
+                userDetails.getFirebaseUid(), 
+                request.getMessage());
         
         try {
             // Build context with chat history
@@ -43,16 +44,28 @@ public class ChatbotController {
                 userDetails.getFirebaseUid()
             );
             
+            log.debug("Processing message for conversation: {}", initialContext.getConversationId());
+            
             // Process through agent chain
             ConversationContext finalContext = orchestrator.processMessage(initialContext);
             
+            // Ensure we have a valid response
+            String responseMessage = finalContext.getDiagnosisSummary();
+            if (responseMessage == null || responseMessage.trim().isEmpty()) {
+                responseMessage = "I apologize, but I couldn't generate a proper response. Please try rephrasing your question.";
+            }
+            
             // Save messages with context
             contextService.saveMessage(finalContext, "user", request.getMessage());
-            contextService.saveMessage(finalContext, "assistant", finalContext.getDiagnosisSummary());
+            contextService.saveMessage(finalContext, "assistant", responseMessage);
+            
+            log.info("Generated response for conversation: {} with confidence: {}", 
+                    finalContext.getConversationId(), 
+                    finalContext.getConfidenceScore());
             
             ChatResponse response = ChatResponse.builder()
-                .message(finalContext.getDiagnosisSummary())
-                .confidence(finalContext.getConfidenceScore())
+                .message(responseMessage)
+                .confidence(finalContext.getConfidenceScore() != null ? finalContext.getConfidenceScore() : 0.0)
                 .intent(finalContext.getDetectedIntent())
                 .requiresHumanReview(finalContext.isRequiresHumanReview())
                 .safetyCheck(finalContext.getSafetyCheck())
@@ -60,18 +73,26 @@ public class ChatbotController {
                 .suggestedQuestions(Collections.emptyList())
                 .build();
             
-            return ResponseEntity.ok(ApiResponse.success(response));
+            return ResponseEntity.ok(ApiResponse.success("Response generated successfully", response));
             
         } catch (Exception e) {
             log.error("Chat processing failed", e);
+            
+            // Return a proper error response
+            ChatResponse errorResponse = ChatResponse.builder()
+                .message("I apologize, but I encountered an error processing your request. Please try again.")
+                .confidence(0.0)
+                .conversationId(request.getConversationId())
+                .build();
+            
             return ResponseEntity.status(500).body(
-                ApiResponse.success("Chat processing failed: " + e.getMessage(), null)
+                ApiResponse.success("Error: " + e.getMessage(), errorResponse)
             );
         }
     }
     
     @PostMapping("/upload-document")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> uploadDocument(
+    public ResponseEntity<ApiResponse<String>> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) String conversationId,
             @RequestParam(required = false) String message,
@@ -98,6 +119,10 @@ public class ChatbotController {
             // Parse document
             DocumentParser.DocumentParseResult parseResult = documentParser.parseDocument(file);
             
+            log.info("Document parsed successfully: {} ({})", 
+                    parseResult.getFileName(), 
+                    parseResult.getFileType());
+            
             // Build context with document
             ChatRequest chatRequest = new ChatRequest();
             chatRequest.setMessage(message != null ? message : "Please analyze this document");
@@ -119,30 +144,62 @@ public class ChatbotController {
             // Process through agent chain
             ConversationContext finalContext = orchestrator.processMessage(contextWithDoc);
             
+            String analysis = finalContext.getDiagnosisSummary();
+            if (analysis == null || analysis.trim().isEmpty()) {
+                analysis = String.format("Document uploaded: %s\n\nI've received your document. Please describe any symptoms or questions you have about it.", 
+                        parseResult.getFileName());
+            }
+            
             // Save messages
-            String uploadNotification = String.format("Document uploaded: %s (%s)", 
+            String uploadNotification = String.format("Uploaded document: %s (%s)", 
                     parseResult.getFileName(), 
                     parseResult.getFileType());
             contextService.saveMessage(finalContext, "user", uploadNotification);
-            contextService.saveMessage(finalContext, "assistant", finalContext.getDiagnosisSummary());
+            contextService.saveMessage(finalContext, "assistant", analysis);
             
-            // Prepare response
-            Map<String, Object> responseData = new HashMap<>();
-            responseData.put("analysis", finalContext.getDiagnosisSummary());
-            responseData.put("fileName", parseResult.getFileName());
-            responseData.put("fileType", parseResult.getFileType());
-            responseData.put("conversationId", finalContext.getConversationId());
-            responseData.put("confidence", finalContext.getConfidenceScore());
+            log.info("Document analysis completed for conversation: {}", finalContext.getConversationId());
             
             return ResponseEntity.ok(ApiResponse.success(
                 "Document analyzed successfully", 
-                responseData
+                analysis
             ));
             
         } catch (Exception e) {
             log.error("Document upload failed", e);
             return ResponseEntity.status(500).body(
                 ApiResponse.success("Document upload failed: " + e.getMessage(), null)
+            );
+        }
+    }
+    
+    @GetMapping("/conversations")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getConversations(
+            @AuthenticationPrincipal FirebaseUserDetails userDetails
+    ) {
+        log.info("Fetching conversations for user: {}", userDetails.getFirebaseUid());
+        
+        try {
+            List<Conversation> conversations = contextService.getUserConversations(
+                    userDetails.getFirebaseUid(), 
+                    50
+            );
+            
+            List<Map<String, Object>> conversationList = new ArrayList<>();
+            for (Conversation conv : conversations) {
+                Map<String, Object> convMap = new HashMap<>();
+                convMap.put("id", conv.getId());
+                convMap.put("title", conv.getTitle());
+                convMap.put("lastMessage", conv.getLastMessage());
+                convMap.put("timestamp", conv.getUpdatedAt().toString());
+                conversationList.add(convMap);
+            }
+            
+            return ResponseEntity.ok(ApiResponse.success(conversationList));
+            
+        } catch (Exception e) {
+            log.error("Failed to fetch conversations", e);
+            return ResponseEntity.status(500).body(
+                ApiResponse.success("Failed to fetch conversations: " + e.getMessage(), null)
             );
         }
     }
@@ -155,7 +212,7 @@ public class ChatbotController {
         log.info("Fetching conversation history: {}", conversationId);
         
         try {
-            var history = contextService.getConversationHistory(conversationId, 50);
+            var history = contextService.getConversationHistory(conversationId, 100);
             return ResponseEntity.ok(ApiResponse.success(history));
         } catch (Exception e) {
             log.error("Failed to fetch conversation history", e);
