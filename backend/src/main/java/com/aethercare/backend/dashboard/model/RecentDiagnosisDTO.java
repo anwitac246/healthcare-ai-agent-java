@@ -1,7 +1,7 @@
 package com.aethercare.backend.dashboard.model;
 
 public record RecentDiagnosisDTO(
-    String id,          // Changed from Long to String
+    String id,          
     String query,
     DiagnosisStatus status,
     String timestamp

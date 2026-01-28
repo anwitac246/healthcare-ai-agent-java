@@ -1,10 +1,31 @@
 spring:
   application:
-    name: backend
-
+    name: aethercare-backend
+  
   data:
     mongodb:
-      uri: ${MONGODB_URI}
+      uri: ${MONGODB_URI:mongodb://localhost:27017/aethercare}
+      database: ${MONGODB_DATABASE:aethercare}
+  
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 server:
   port: 8080
+
+groq:
+  api:
+    key: ${GROQ_API_KEY}
+    url: https://api.groq.com/openai/v1/chat/completions
+  model: llama-3.3-70b-versatile
+
+cors:
+  allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
+
+logging:
+  level:
+    com.aethercare.backend: ${LOG_LEVEL:DEBUG}
+    org.springframework.security: DEBUG
+    org.springframework.web.cors: DEBUG
