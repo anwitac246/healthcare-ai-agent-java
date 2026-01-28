@@ -22,21 +22,21 @@ const Homepage = () => {
 
        
         <div className="relative z-10 min-h-screen flex items-center">
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 w-full py-20">
+          <div className="max-w-7xl w-full py-20 pl-4 sm:pl-8 lg:pl-16">
             <div className="max-w-2xl">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-green-900 mb-4 sm:mb-6 leading-tight">
                 Aethercare
               </h1>
-              <p className="text-base sm:text-lg lg:text-xl text-green-800 mb-6 sm:mb-8 leading-relaxed">
+              <p className="text-base sm:text-lg lg:text-xl text-green-900 font-medium mb-6 sm:mb-8 leading-relaxed drop-shadow-sm">
                 Transforming healthcare with innovative solutions that put patients first. 
                 Experience seamless care delivery, advanced diagnostics, and personalized 
                 treatment plans designed for your wellbeing.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                <button className="bg-green-700 text-white px-6 sm:px-8 py-3 rounded-full hover:bg-green-800 transition-colors font-semibold text-base lg:text-lg">
+                <button className="bg-green-700 text-white px-6 sm:px-8 py-3 rounded-full hover:bg-green-800 transition-colors font-semibold text-base lg:text-lg shadow-md">
                   Learn More
                 </button>
-                <button className="border-2 border-green-800 text-green-800 px-6 sm:px-8 py-3 rounded-full hover:bg-green-50 transition-colors font-semibold text-base lg:text-lg">
+                <button className="border-2 border-green-800 text-green-800 bg-white/80 px-6 sm:px-8 py-3 rounded-full hover:bg-green-50 transition-colors font-semibold text-base lg:text-lg shadow-md">
                   Contact Us
                 </button>
               </div>
