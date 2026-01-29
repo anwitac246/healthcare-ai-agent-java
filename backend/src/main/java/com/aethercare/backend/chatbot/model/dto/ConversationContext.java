@@ -3,7 +3,6 @@ package com.aethercare.backend.chatbot.model.dto;
 import com.aethercare.backend.chatbot.model.entity.ChatMessage;
 import lombok.Builder;
 import lombok.Data;
-import lombok.With;
 import java.time.Instant;
 import java.util.*;
 

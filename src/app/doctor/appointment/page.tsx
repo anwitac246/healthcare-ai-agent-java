@@ -1,114 +1,181 @@
+// src/app/doctor/appointments/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Clock, Video, MapPin, User, X, CheckCircle2, Mail, Home, FileText, Settings, LogOut, ChevronRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
-// Mock data for demonstration
-const mockUpcomingAppointments = [
-  {
-    id: '1',
-    patientName: 'John Smith',
-    patientEmail: 'john.smith@email.com',
-    mode: 'ONLINE' as const,
-    appointmentDateTime: new Date(Date.now() + 86400000 * 2).toISOString(),
-    status: 'SCHEDULED' as const,
-    videoConferenceLink: 'https://meet.google.com/xyz',
-    videoLinkAvailable: true,
-    notes: 'Patient complains of chest pain',
-    durationMinutes: 45,
-  },
-  {
-    id: '2',
-    patientName: 'Emma Wilson',
-    patientEmail: 'emma.wilson@email.com',
-    mode: 'IN_PERSON' as const,
-    appointmentDateTime: new Date(Date.now() + 86400000 * 5).toISOString(),
-    status: 'SCHEDULED' as const,
-    videoLinkAvailable: false,
-    notes: 'Follow-up for medication review',
-    durationMinutes: 30,
-  },
-  {
-    id: '3',
-    patientName: 'Michael Brown',
-    patientEmail: 'michael.brown@email.com',
-    mode: 'ONLINE' as const,
-    appointmentDateTime: new Date(Date.now() + 3600000).toISOString(),
-    status: 'PENDING' as const,
-    videoLinkAvailable: false,
-    notes: 'New patient consultation',
-    durationMinutes: 45,
-    holdExpiresAt: new Date(Date.now() + 1800000).toISOString(),
-  },
-  {
-    id: '4',
-    patientName: 'Sarah Johnson',
-    patientEmail: 'sarah.j@email.com',
-    mode: 'ONLINE' as const,
-    appointmentDateTime: new Date(Date.now() + 7200000).toISOString(),
-    status: 'PENDING' as const,
-    videoLinkAvailable: false,
-    notes: 'Skin rash assessment',
-    durationMinutes: 30,
-    holdExpiresAt: new Date(Date.now() + 3600000).toISOString(),
-  },
-];
+interface Appointment {
+  id: string;
+  patientName: string;
+  patientEmail: string;
+  mode: 'ONLINE' | 'IN_PERSON';
+  appointmentDateTime: string;
+  status: 'PENDING' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'REJECTED';
+  videoConferenceLink?: string;
+  videoLinkAvailable: boolean;
+  notes?: string;
+  holdExpiresAt?: string;
+  durationMinutes: number;
+  rejectionReason?: string;
+}
 
-const mockPastAppointments = [
-  {
-    id: '5',
-    patientName: 'David Lee',
-    patientEmail: 'david.lee@email.com',
-    mode: 'ONLINE' as const,
-    appointmentDateTime: new Date(Date.now() - 86400000 * 3).toISOString(),
-    status: 'COMPLETED' as const,
-    videoLinkAvailable: false,
-    notes: 'Regular checkup - all normal',
-    durationMinutes: 30,
-  },
-  {
-    id: '6',
-    patientName: 'Lisa Anderson',
-    patientEmail: 'lisa.a@email.com',
-    mode: 'IN_PERSON' as const,
-    appointmentDateTime: new Date(Date.now() - 86400000 * 7).toISOString(),
-    status: 'COMPLETED' as const,
-    videoLinkAvailable: false,
-    notes: 'Lab results review',
-    durationMinutes: 45,
-  },
-  {
-    id: '7',
-    patientName: 'Robert Chen',
-    patientEmail: 'robert.chen@email.com',
-    mode: 'ONLINE' as const,
-    appointmentDateTime: new Date(Date.now() - 86400000 * 10).toISOString(),
-    status: 'CANCELLED' as const,
-    videoLinkAvailable: false,
-    notes: 'Patient cancelled - rescheduled',
-    durationMinutes: 30,
-  },
-  {
-    id: '8',
-    patientName: 'Mary Taylor',
-    patientEmail: 'mary.t@email.com',
-    mode: 'IN_PERSON' as const,
-    appointmentDateTime: new Date(Date.now() - 86400000 * 15).toISOString(),
-    status: 'REJECTED' as const,
-    videoLinkAvailable: false,
-    notes: 'Doctor unavailable at requested time',
-    durationMinutes: 45,
-    rejectionReason: 'Not available at this time',
-  },
-];
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 export default function DoctorAppointmentsPage() {
+  const router = useRouter();
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  
   const [activeView, setActiveView] = useState<'upcoming' | 'past'>('upcoming');
   const [activeTab, setActiveTab] = useState<'ALL' | 'PENDING' | 'SCHEDULED'>('ALL');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  
+  const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
+  const [pastAppointments, setPastAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (authToken) {
+      loadAppointments();
+    }
+  }, [authToken, activeView]);
+
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userDataStr = localStorage.getItem('userData');
+      
+      if (!token || !userDataStr) {
+        router.push('/doctor_login');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        router.push('/doctor_login');
+        return;
+      }
+
+      setAuthToken(token);
+      setUserData(JSON.parse(userDataStr));
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      router.push('/doctor_login');
+    } finally {
+      setIsAuthChecking(false);
+    }
+  };
+
+  const loadAppointments = async () => {
+    if (!authToken) return;
+    
+    setLoading(true);
+    try {
+      const endpoint = activeView === 'upcoming' 
+        ? '/api/appointments/doctor/upcoming'
+        : '/api/appointments/doctor/past';
+      
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (activeView === 'upcoming') {
+          setUpcomingAppointments(data.data || []);
+        } else {
+          setPastAppointments(data.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load appointments:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveAppointment = async (appointmentId: string) => {
+    if (!authToken) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/appointments/${appointmentId}/approve`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to approve appointment');
+      }
+
+      alert('Appointment approved successfully');
+      loadAppointments();
+      if (showDetailModal) {
+        setShowDetailModal(false);
+        setSelectedAppointment(null);
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectAppointment = async () => {
+    if (!selectedAppointment || !rejectionReason.trim() || !authToken) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/reject`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ reason: rejectionReason })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to reject appointment');
+      }
+
+      alert('Appointment rejected');
+      setShowRejectModal(false);
+      setRejectionReason('');
+      setSelectedAppointment(null);
+      loadAppointments();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userData');
+    router.push('/doctor_login');
+  };
 
   const formatDateTime = (isoString: string) => {
     const date = new Date(isoString);
@@ -141,74 +208,76 @@ export default function DoctorAppointmentsPage() {
     return `${minutes} min`;
   };
 
-  const appointments = activeView === 'upcoming' ? mockUpcomingAppointments : mockPastAppointments;
+  const appointments = activeView === 'upcoming' ? upcomingAppointments : pastAppointments;
   
   const filteredAppointments = activeTab === 'ALL' 
     ? appointments 
     : appointments.filter(apt => apt.status === activeTab);
 
   const upcomingCounts = {
-    ALL: mockUpcomingAppointments.length,
-    PENDING: mockUpcomingAppointments.filter(a => a.status === 'PENDING').length,
-    SCHEDULED: mockUpcomingAppointments.filter(a => a.status === 'SCHEDULED').length,
+    ALL: upcomingAppointments.length,
+    PENDING: upcomingAppointments.filter(a => a.status === 'PENDING').length,
+    SCHEDULED: upcomingAppointments.filter(a => a.status === 'SCHEDULED').length,
   };
 
-  const pastCounts = {
-    ALL: mockPastAppointments.length,
-    COMPLETED: mockPastAppointments.filter(a => a.status === 'COMPLETED').length,
-    CANCELLED: mockPastAppointments.filter(a => a.status === 'CANCELLED').length,
-    REJECTED: mockPastAppointments.filter(a => a.status === 'REJECTED').length,
-  };
-
-  const todayAppointments = mockUpcomingAppointments.filter(a => {
+  const todayAppointments = upcomingAppointments.filter(a => {
     const aptDate = new Date(a.appointmentDateTime).toDateString();
     const today = new Date().toDateString();
     return aptDate === today;
   }).length;
 
+  if (isAuthChecking) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800 mx-auto"></div>
+          <p className="text-green-800 mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white flex">
       {/* Sidebar */}
       <div className="w-64 border-r border-gray-200 flex flex-col">
-        {/* Logo */}
         <div className="p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-900">HealthCare</h1>
+          <h1 className="text-2xl font-bold text-gray-900">AetherCare</h1>
           <p className="text-sm text-gray-600 mt-1">Doctor Portal</p>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 p-4">
           <div className="space-y-2">
             <a
-              href="#"
+              href="/doctor/dashboard"
               className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
             >
               <Home className="w-5 h-5" />
               <span className="font-medium">Dashboard</span>
             </a>
             <a
-              href="#"
+              href="/doctor/appointments"
               className="flex items-center gap-3 px-4 py-3 bg-green-50 text-green-700 border-l-4 border-green-700 rounded-r-md transition-colors"
             >
               <Calendar className="w-5 h-5" />
               <span className="font-medium">Appointments</span>
             </a>
             <a
-              href="#"
+              href="/doctor/patients"
               className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
             >
               <User className="w-5 h-5" />
               <span className="font-medium">Patients</span>
             </a>
             <a
-              href="#"
+              href="/doctor/reports"
               className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
             >
               <FileText className="w-5 h-5" />
               <span className="font-medium">Reports</span>
             </a>
             <a
-              href="#"
+              href="/doctor/settings"
               className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
             >
               <Settings className="w-5 h-5" />
@@ -217,18 +286,22 @@ export default function DoctorAppointmentsPage() {
           </div>
         </nav>
 
-        {/* User Section */}
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-green-100 border border-green-300 rounded-lg flex items-center justify-center">
               <User className="w-6 h-6 text-green-700" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-900">Dr. Sarah Johnson</p>
-              <p className="text-xs text-gray-600">Cardiologist</p>
+              <p className="text-sm font-semibold text-gray-900">
+                Dr. {userData?.firstName} {userData?.lastName}
+              </p>
+              <p className="text-xs text-gray-600">{userData?.specialization}</p>
             </div>
           </div>
-          <button className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >
             <LogOut className="w-4 h-4" />
             Logout
           </button>
@@ -276,10 +349,10 @@ export default function DoctorAppointmentsPage() {
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <div className="flex items-center justify-between mb-2">
                 <CheckCircle2 className="w-6 h-6 text-gray-600" />
-                <span className="text-xs font-medium text-gray-500 uppercase">Completed</span>
+                <span className="text-xs font-medium text-gray-500 uppercase">Total</span>
               </div>
-              <p className="text-3xl font-bold text-gray-900">{pastCounts.COMPLETED}</p>
-              <p className="text-sm text-gray-600 mt-1">Past Visits</p>
+              <p className="text-3xl font-bold text-gray-900">{upcomingCounts.ALL}</p>
+              <p className="text-sm text-gray-600 mt-1">All Upcoming</p>
             </div>
           </div>
 
@@ -350,24 +423,27 @@ export default function DoctorAppointmentsPage() {
                   </button>
                 </>
               ) : (
-                <>
-                  <button
-                    onClick={() => setActiveTab('ALL')}
-                    className={`px-6 py-4 font-semibold text-sm border-b-2 transition-colors ${
-                      activeTab === 'ALL'
-                        ? 'border-green-700 text-green-700'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    ALL ({pastCounts.ALL})
-                  </button>
-                </>
+                <button
+                  onClick={() => setActiveTab('ALL')}
+                  className={`px-6 py-4 font-semibold text-sm border-b-2 transition-colors ${
+                    activeTab === 'ALL'
+                      ? 'border-green-700 text-green-700'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  ALL ({pastAppointments.length})
+                </button>
               )}
             </div>
 
             {/* Appointments Grid */}
             <div className="p-6">
-              {filteredAppointments.length === 0 ? (
+              {loading ? (
+                <div className="text-center py-16">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800 mx-auto"></div>
+                  <p className="text-gray-600 mt-4">Loading appointments...</p>
+                </div>
+              ) : filteredAppointments.length === 0 ? (
                 <div className="text-center py-16">
                   <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600">No appointments found</p>
@@ -446,8 +522,9 @@ export default function DoctorAppointmentsPage() {
                           {appointment.status === 'PENDING' && activeView === 'upcoming' && (
                             <div className="flex gap-2">
                               <button
-                                onClick={() => alert('Appointment approved!')}
-                                className="px-4 py-2 text-sm bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors"
+                                onClick={() => handleApproveAppointment(appointment.id)}
+                                disabled={loading}
+                                className="px-4 py-2 text-sm bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors disabled:opacity-50"
                               >
                                 Approve
                               </button>
@@ -463,9 +540,9 @@ export default function DoctorAppointmentsPage() {
                             </div>
                           )}
 
-                          {appointment.videoLinkAvailable && (appointment as any).videoConferenceLink && activeView === 'upcoming' && (
+                          {appointment.videoLinkAvailable && appointment.videoConferenceLink && activeView === 'upcoming' && (
                             <a
-                              href={(appointment as any).videoConferenceLink}
+                              href={appointment.videoConferenceLink}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="px-4 py-2 text-sm bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors inline-flex items-center gap-2"
@@ -564,12 +641,12 @@ export default function DoctorAppointmentsPage() {
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <button
                     onClick={() => {
-                      alert('Appointment approved!');
-                      setShowDetailModal(false);
+                      handleApproveAppointment(selectedAppointment.id);
                     }}
-                    className="flex-1 px-6 py-3 bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors font-semibold"
+                    disabled={loading}
+                    className="flex-1 px-6 py-3 bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors font-semibold disabled:opacity-50"
                   >
-                    Approve Appointment
+                    {loading ? 'Approving...' : 'Approve Appointment'}
                   </button>
                   <button
                     onClick={() => {
@@ -609,6 +686,7 @@ export default function DoctorAppointmentsPage() {
                   onChange={(e) => setRejectionReason(e.target.value)}
                   placeholder="E.g., Not available at this time..."
                   rows={3}
+                  maxLength={500}
                   className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:border-green-700 transition-colors resize-none"
                 />
               </div>
@@ -625,20 +703,11 @@ export default function DoctorAppointmentsPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    if (rejectionReason.trim()) {
-                      alert('Appointment rejected');
-                      setShowRejectModal(false);
-                      setRejectionReason('');
-                      setSelectedAppointment(null);
-                    } else {
-                      alert('Please provide a reason');
-                    }
-                  }}
-                  disabled={!rejectionReason.trim()}
+                  onClick={handleRejectAppointment}
+                  disabled={!rejectionReason.trim() || loading}
                   className="flex-1 px-4 py-3 bg-red-600 text-white border border-red-700 rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 font-medium"
                 >
-                  Reject
+                  {loading ? 'Rejecting...' : 'Reject'}
                 </button>
               </div>
             </div>
