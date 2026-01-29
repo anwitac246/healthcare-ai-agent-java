@@ -1,7 +1,7 @@
-'use client';
-
-import { useState } from 'react';
+"use client";
+import {useState} from 'react';
 import { Calendar, Clock, Video, MapPin, User, X, AlertCircle, CheckCircle2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import Navbar from '@/app/components/navbar';
 
 // Mock data for demonstration
 const mockDoctors = [
@@ -177,84 +177,77 @@ export default function PatientAppointments() {
   return (
     <div className="min-h-screen bg-white">
       {/* Transparent Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-transparent">
-        <div className="max-w-[1400px] mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">HealthCare</h1>
-            <div className="flex items-center gap-6">
-              <a href="#" className="text-gray-700 hover:text-gray-900 font-medium">Dashboard</a>
-              <a href="#" className="text-gray-700 hover:text-gray-900 font-medium">Appointments</a>
-              <a href="#" className="text-gray-700 hover:text-gray-900 font-medium">Profile</a>
-              <button className="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50">
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navbar/>
 
-      <div className="max-w-[1400px] mx-auto px-8 py-8 mt-20">
-        {/* Header with View Toggle */}
+      <div className="max-w-[1400px] mx-auto px-8 py-30">
+        {/* Header with View Toggle and Book Button */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Book Appointment</h1>
-            <p className="text-gray-600">Schedule a consultation with your doctor</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">My Appointments</h1>
+            <p className="text-gray-600">View and manage your appointments</p>
           </div>
-          <div className="flex items-center gap-2 border border-gray-300">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 border border-gray-300 rounded-md overflow-hidden">
+              <button
+                onClick={() => setActiveView('upcoming')}
+                className={`px-6 py-2 font-medium transition-colors ${
+                  activeView === 'upcoming'
+                    ? 'bg-green-700 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Upcoming
+              </button>
+              <button
+                onClick={() => setActiveView('past')}
+                className={`px-6 py-2 font-medium transition-colors ${
+                  activeView === 'past'
+                    ? 'bg-green-700 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Past
+              </button>
+            </div>
             <button
-              onClick={() => setActiveView('upcoming')}
-              className={`px-6 py-2 font-medium transition-colors ${
-                activeView === 'upcoming'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
+              onClick={() => setShowBookingModal(true)}
+              className="px-6 py-2 bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors font-semibold whitespace-nowrap"
             >
-              Upcoming
+              + Book New Appointment
             </button>
-            <button
-              onClick={() => setActiveView('past')}
-              className={`px-6 py-2 font-medium transition-colors ${
-                activeView === 'past'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Past
-            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search appointments..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:border-green-700 transition-colors"
+            />
           </div>
         </div>
 
         {/* Appointments List View */}
-        {(activeView === 'upcoming' || activeView === 'past') && (
-          <div className="mb-8">
-            {/* Search */}
-            <div className="mb-6">
-              <div className="relative max-w-md">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Search appointments..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 border border-gray-300 focus:outline-none focus:border-emerald-600 transition-colors"
-                />
-              </div>
-            </div>
-
+        <div className="mb-8">
             {/* Appointments Grid */}
             <div className="space-y-4 mb-8">
               {filteredAppointments.length === 0 ? (
-                <div className="border border-gray-200 p-16 text-center">
+                <div className="border border-gray-200 rounded-lg p-16 text-center">
                   <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600">No {activeView} appointments found</p>
                 </div>
               ) : (
                 filteredAppointments.map((appointment) => (
-                  <div key={appointment.id} className="border border-gray-200 p-6 hover:border-gray-300 transition-colors">
+                  <div key={appointment.id} className="border border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-colors">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-start gap-4 mb-4">
-                          <div className="w-12 h-12 bg-gray-100 border border-gray-300 flex items-center justify-center flex-shrink-0">
+                          <div className="w-12 h-12 bg-gray-100 border border-gray-300 rounded-lg flex items-center justify-center flex-shrink-0">
                             <User className="w-6 h-6 text-gray-600" />
                           </div>
                           <div>
@@ -275,7 +268,7 @@ export default function PatientAppointments() {
                         </div>
 
                         {appointment.status === 'PENDING' && appointment.holdExpiresAt && (
-                          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 flex items-start gap-2">
+                          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2">
                             <Clock className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
                             <div>
                               <p className="text-xs font-semibold text-amber-900">Awaiting Doctor Approval</p>
@@ -287,18 +280,18 @@ export default function PatientAppointments() {
                         )}
 
                         {appointment.notes && (
-                          <div className="p-3 bg-gray-50 border border-gray-200">
+                          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
                             <p className="text-xs font-semibold text-gray-700 mb-1">Notes</p>
                             <p className="text-sm text-gray-600">{appointment.notes}</p>
                           </div>
                         )}
 
-                        {appointment.videoLinkAvailable && appointment.videoConferenceLink && activeView === 'upcoming' && (
+                        {appointment.videoLinkAvailable && (appointment as any).videoConferenceLink && activeView === 'upcoming' && (
                           <a
-                            href={appointment.videoConferenceLink}
+                            href={(appointment as any).videoConferenceLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 mt-4 px-5 py-2 bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-colors text-sm font-medium"
+                            className="inline-flex items-center gap-2 mt-4 px-5 py-2 bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors text-sm font-medium"
                           >
                             <Video className="w-4 h-4" />
                             Join Video Call
@@ -307,9 +300,9 @@ export default function PatientAppointments() {
                       </div>
 
                       <div className="flex flex-col items-end gap-3">
-                        <span className={`px-3 py-1 text-xs font-semibold border ${
+                        <span className={`px-3 py-1 text-xs font-semibold border rounded-md ${
                           appointment.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                          appointment.status === 'SCHEDULED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          appointment.status === 'SCHEDULED' ? 'bg-green-50 text-green-700 border-green-200' :
                           appointment.status === 'COMPLETED' ? 'bg-gray-50 text-gray-700 border-gray-200' :
                           appointment.status === 'CANCELLED' ? 'bg-red-50 text-red-700 border-red-200' :
                           'bg-gray-50 text-gray-700 border-gray-200'
@@ -318,13 +311,7 @@ export default function PatientAppointments() {
                         </span>
 
                         {(appointment.status === 'SCHEDULED' || appointment.status === 'PENDING') && activeView === 'upcoming' && (
-                          <button
-                            onClick={() => {
-                              setSelectedAppointment(appointment);
-                              setShowCancelModal(true);
-                            }}
-                            className="px-4 py-2 text-sm text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
-                          >
+                          <button className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors">
                             Cancel
                           </button>
                         )}
@@ -334,23 +321,12 @@ export default function PatientAppointments() {
                 ))
               )}
             </div>
-
-            {/* Book New Appointment Button */}
-            {activeView === 'upcoming' && (
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="w-full py-4 bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-colors font-semibold text-lg"
-              >
-                + Book New Appointment
-              </button>
-            )}
-          </div>
-        )}
+        </div>
 
         {/* Booking Modal */}
         {showBookingModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white border-2 border-gray-900 max-w-6xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-white border-2 border-gray-900 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
               <div className="border-b border-gray-200 p-6 flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900">Book New Appointment</h2>
                 <button
@@ -358,7 +334,7 @@ export default function PatientAppointments() {
                     setShowBookingModal(false);
                     resetBookingForm();
                   }}
-                  className="p-2 hover:bg-gray-100 transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-md transition-colors"
                 >
                   <X className="w-6 h-6 text-gray-600" />
                 </button>
@@ -369,13 +345,13 @@ export default function PatientAppointments() {
                   {/* Left Column - Calendar */}
                   <div className="space-y-6">
                     {/* Calendar Widget */}
-                    <div className="bg-white border border-gray-200 p-6">
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
                       <div className="flex items-center justify-between mb-6">
-                        <button onClick={previousMonth} className="p-1 hover:bg-gray-100 border border-gray-300">
+                        <button onClick={previousMonth} className="p-1 hover:bg-gray-100 border border-gray-300 rounded-md">
                           <ChevronLeft className="w-5 h-5 text-gray-600" />
                         </button>
                         <h2 className="text-base font-semibold text-gray-900">{monthYear}</h2>
-                        <button onClick={nextMonth} className="p-1 hover:bg-gray-100 border border-gray-300">
+                        <button onClick={nextMonth} className="p-1 hover:bg-gray-100 border border-gray-300 rounded-md">
                           <ChevronRight className="w-5 h-5 text-gray-600" />
                         </button>
                       </div>
@@ -405,9 +381,9 @@ export default function PatientAppointments() {
                               onClick={() => selectedDoctor && handleDateClick(day)}
                               disabled={!selectedDoctor}
                               className={`
-                                aspect-square flex items-center justify-center text-sm font-medium transition-colors
-                                ${isSelected ? 'bg-emerald-600 text-white border border-emerald-700' : ''}
-                                ${!isSelected && isToday ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : ''}
+                                aspect-square flex items-center justify-center text-sm font-medium transition-colors rounded-md
+                                ${isSelected ? 'bg-green-700 text-white border border-green-800' : ''}
+                                ${!isSelected && isToday ? 'bg-green-50 text-green-700 border border-green-200' : ''}
                                 ${!isSelected && !isToday ? 'hover:bg-gray-50 text-gray-900 border border-transparent' : ''}
                                 ${!selectedDoctor ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                               `}
@@ -420,22 +396,22 @@ export default function PatientAppointments() {
                     </div>
 
                     {/* Consultation Mode Options */}
-                    <div className="bg-white border border-gray-200 p-6 space-y-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
                       <h3 className="font-semibold text-gray-900 mb-4">Consultation Mode</h3>
                       
                       <button
                         onClick={() => setAppointmentMode('ONLINE')}
-                        className={`w-full p-4 border-2 text-left transition-colors ${
+                        className={`w-full p-4 border-2 rounded-lg text-left transition-colors ${
                           appointmentMode === 'ONLINE' 
-                            ? 'border-emerald-600 bg-emerald-50' 
+                            ? 'border-green-700 bg-green-50' 
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 border flex items-center justify-center ${
-                            appointmentMode === 'ONLINE' ? 'border-emerald-600 bg-white' : 'border-gray-300 bg-gray-50'
+                          <div className={`w-10 h-10 border rounded-md flex items-center justify-center ${
+                            appointmentMode === 'ONLINE' ? 'border-green-700 bg-white' : 'border-gray-300 bg-gray-50'
                           }`}>
-                            <Video className={`w-5 h-5 ${appointmentMode === 'ONLINE' ? 'text-emerald-600' : 'text-gray-600'}`} />
+                            <Video className={`w-5 h-5 ${appointmentMode === 'ONLINE' ? 'text-green-700' : 'text-gray-600'}`} />
                           </div>
                           <div>
                             <p className="font-semibold text-gray-900 text-sm">Schedule Online Consultation</p>
@@ -446,17 +422,17 @@ export default function PatientAppointments() {
 
                       <button
                         onClick={() => setAppointmentMode('IN_PERSON')}
-                        className={`w-full p-4 border-2 text-left transition-colors ${
+                        className={`w-full p-4 border-2 rounded-lg text-left transition-colors ${
                           appointmentMode === 'IN_PERSON' 
-                            ? 'border-emerald-600 bg-emerald-50' 
+                            ? 'border-green-700 bg-green-50' 
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 border flex items-center justify-center ${
-                            appointmentMode === 'IN_PERSON' ? 'border-emerald-600 bg-white' : 'border-gray-300 bg-gray-50'
+                          <div className={`w-10 h-10 border rounded-md flex items-center justify-center ${
+                            appointmentMode === 'IN_PERSON' ? 'border-green-700 bg-white' : 'border-gray-300 bg-gray-50'
                           }`}>
-                            <MapPin className={`w-5 h-5 ${appointmentMode === 'IN_PERSON' ? 'text-emerald-600' : 'text-gray-600'}`} />
+                            <MapPin className={`w-5 h-5 ${appointmentMode === 'IN_PERSON' ? 'text-green-700' : 'text-gray-600'}`} />
                           </div>
                           <div>
                             <p className="font-semibold text-gray-900 text-sm">Schedule Onsite Consultation</p>
@@ -470,7 +446,7 @@ export default function PatientAppointments() {
                   {/* Right Column - Doctor Selection & Details */}
                   <div className="space-y-6">
                     {/* Doctor Selection */}
-                    <div className="bg-white border border-gray-200 p-6">
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
                       <h2 className="text-lg font-semibold text-gray-900 mb-4">Doctor details</h2>
                       
                       {!selectedDoctor ? (
@@ -485,7 +461,7 @@ export default function PatientAppointments() {
                               setSelectedDate('');
                               setSelectedSlot(null);
                             }}
-                            className="w-full px-4 py-3 border border-gray-300 focus:outline-none focus:border-emerald-600 transition-colors"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:border-green-700 transition-colors"
                           >
                             <option value="">Choose a doctor...</option>
                             {mockDoctors.map((doctor) => (
@@ -498,7 +474,7 @@ export default function PatientAppointments() {
                       ) : (
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4">
-                            <div className="w-16 h-16 bg-gray-100 border border-gray-300 flex items-center justify-center">
+                            <div className="w-16 h-16 bg-gray-100 border border-gray-300 rounded-lg flex items-center justify-center">
                               <User className="w-8 h-8 text-gray-600" />
                             </div>
                             <div>
@@ -516,7 +492,7 @@ export default function PatientAppointments() {
                               setSelectedDate('');
                               setSelectedSlot(null);
                             }}
-                            className="px-4 py-2 text-sm border border-gray-300 hover:bg-gray-50 transition-colors"
+                            className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                           >
                             Change
                           </button>
@@ -526,7 +502,7 @@ export default function PatientAppointments() {
 
                     {/* Date & Time Selection */}
                     {selectedDoctor && selectedDate && (
-                      <div className="bg-white border border-gray-200 p-6">
+                      <div className="bg-white border border-gray-200 rounded-lg p-6">
                         <h3 className="font-semibold text-gray-900 mb-1">
                           {new Date(selectedDate).toLocaleDateString('en-US', { 
                             weekday: 'long', 
@@ -544,9 +520,9 @@ export default function PatientAppointments() {
                               onClick={() => slot.isAvailable && setSelectedSlot(slot)}
                               disabled={!slot.isAvailable}
                               className={`
-                                px-4 py-3 text-sm font-medium border transition-colors
+                                px-4 py-3 text-sm font-medium border transition-colors rounded-md
                                 ${selectedSlot === slot 
-                                  ? 'border-2 border-emerald-600 bg-emerald-600 text-white' 
+                                  ? 'border-2 border-green-700 bg-green-700 text-white' 
                                   : slot.isAvailable
                                   ? 'border border-gray-900 text-gray-900 hover:bg-gray-50'
                                   : 'border border-gray-200 text-gray-300 cursor-not-allowed'
@@ -562,7 +538,7 @@ export default function PatientAppointments() {
 
                     {/* Notes Section */}
                     {selectedSlot && (
-                      <div className="bg-white border border-gray-200 p-6">
+                      <div className="bg-white border border-gray-200 rounded-lg p-6">
                         <label className="block text-sm font-medium text-gray-700 mb-3">
                           Additional Notes (Optional)
                         </label>
@@ -571,7 +547,7 @@ export default function PatientAppointments() {
                           onChange={(e) => setNotes(e.target.value)}
                           placeholder="Any specific concerns or symptoms..."
                           rows={3}
-                          className="w-full px-4 py-3 border border-gray-300 focus:outline-none focus:border-emerald-600 transition-colors resize-none"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:border-green-700 transition-colors resize-none"
                         />
                       </div>
                     )}
@@ -584,7 +560,7 @@ export default function PatientAppointments() {
                           setShowBookingModal(false);
                           resetBookingForm();
                         }}
-                        className="w-full py-4 bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-colors font-semibold text-lg"
+                        className="w-full py-4 bg-green-700 text-white border border-green-800 rounded-md hover:bg-green-800 transition-colors font-semibold text-lg"
                       >
                         Continue
                       </button>
@@ -599,7 +575,7 @@ export default function PatientAppointments() {
         {/* Cancel Modal */}
         {showCancelModal && selectedAppointment && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white border-2 border-gray-900 max-w-md w-full">
+            <div className="bg-white border-2 border-gray-900 rounded-lg max-w-md w-full">
               <div className="border-b border-gray-200 p-6">
                 <h2 className="text-xl font-bold text-gray-900">Cancel Appointment</h2>
               </div>
@@ -618,7 +594,7 @@ export default function PatientAppointments() {
                     onChange={(e) => setCancellationReason(e.target.value)}
                     placeholder="Please provide a reason..."
                     rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 focus:outline-none focus:border-emerald-600 transition-colors resize-none"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:border-green-700 transition-colors resize-none"
                   />
                 </div>
 
@@ -629,7 +605,7 @@ export default function PatientAppointments() {
                       setCancellationReason('');
                       setSelectedAppointment(null);
                     }}
-                    className="flex-1 px-4 py-3 border border-gray-300 hover:bg-gray-50 transition-colors font-medium"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors font-medium"
                   >
                     Keep
                   </button>
@@ -641,7 +617,7 @@ export default function PatientAppointments() {
                       setSelectedAppointment(null);
                     }}
                     disabled={!cancellationReason.trim()}
-                    className="flex-1 px-4 py-3 bg-red-600 text-white border border-red-700 hover:bg-red-700 transition-colors disabled:opacity-50 font-medium"
+                    className="flex-1 px-4 py-3 bg-red-600 text-white border border-red-700 rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 font-medium"
                   >
                     Cancel
                   </button>
