@@ -2,10 +2,12 @@ package com.aethercare.backend.chatbot.model.dto;
 
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 import java.util.Map;
 
 @Data
 @Builder
+@Getter
 public class AgentResult {
     private final String agentName;
     private final boolean success;

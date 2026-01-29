@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, Video, MapPin, User, X, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Video, MapPin, User, X, AlertCircle, CheckCircle2, Search, Filter } from 'lucide-react';
+import Navbar from '@/app/components/navbar';
 
 interface Doctor {
   id: string;
@@ -31,6 +32,8 @@ interface Appointment {
   notes?: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
 export default function PatientAppointments() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
@@ -45,6 +48,8 @@ export default function PatientAppointments() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchDoctors();
@@ -59,11 +64,9 @@ export default function PatientAppointments() {
 
   const fetchDoctors = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8080/api/user/doctors', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/api/user/doctors`, {
+        headers: { 'Authorization': `Bearer ${token}` },
       });
       
       if (response.ok) {
@@ -77,11 +80,9 @@ export default function PatientAppointments() {
 
   const fetchAppointments = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8080/api/appointments/patient/my-appointments', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/api/appointments/patient/my-appointments`, {
+        headers: { 'Authorization': `Bearer ${token}` },
       });
       
       if (response.ok) {
@@ -98,14 +99,10 @@ export default function PatientAppointments() {
     
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken');
       const response = await fetch(
-        `http://localhost:8080/api/appointments/availability/${selectedDoctor.id}?date=${selectedDate}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
+        `${API_BASE_URL}/api/appointments/availability/${selectedDoctor.id}?date=${selectedDate}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
       );
       
       if (response.ok) {
@@ -124,8 +121,8 @@ export default function PatientAppointments() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8080/api/appointments/book', {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/api/appointments/book`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -140,7 +137,6 @@ export default function PatientAppointments() {
       });
       
       if (response.ok) {
-        alert('Appointment booked successfully!');
         setShowBookingModal(false);
         resetBookingForm();
         fetchAppointments();
@@ -164,9 +160,9 @@ export default function PatientAppointments() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken');
       const response = await fetch(
-        `http://localhost:8080/api/appointments/${selectedAppointment.id}/cancel`,
+        `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/cancel`,
         {
           method: 'POST',
           headers: {
@@ -178,7 +174,6 @@ export default function PatientAppointments() {
       );
       
       if (response.ok) {
-        alert('Appointment cancelled successfully');
         setShowCancelModal(false);
         setCancellationReason('');
         setSelectedAppointment(null);
@@ -206,6 +201,7 @@ export default function PatientAppointments() {
   const formatDateTime = (isoString: string) => {
     const date = new Date(isoString);
     return date.toLocaleString('en-US', {
+      weekday: 'short',
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -222,165 +218,204 @@ export default function PatientAppointments() {
     });
   };
 
+  const getStatusColor = (status: string) => {
+    const colors = {
+      PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+      SCHEDULED: 'bg-green-50 text-green-700 border-green-200',
+      REJECTED: 'bg-red-50 text-red-700 border-red-200',
+      COMPLETED: 'bg-gray-50 text-gray-700 border-gray-200',
+      CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+    };
+    return colors[status as keyof typeof colors] || 'bg-gray-50 text-gray-700 border-gray-200';
+  };
+
+  const filteredAppointments = appointments.filter(apt => {
+    const matchesStatus = filterStatus === 'all' || apt.status === filterStatus;
+    const matchesSearch = apt.doctorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          apt.specialty?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
   return (
-    <div className="min-h-screen bg-white p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
+      <Navbar />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-20">
+        {/* Header Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-green-800 mb-2">My Appointments</h1>
-          <p className="text-gray-600">Book and manage your medical appointments</p>
+          <h1 className="text-4xl font-bold text-green-900 mb-2">Appointments</h1>
+          <p className="text-green-700">Manage your healthcare appointments</p>
         </div>
 
-        {/* Book New Appointment Button */}
-        <button
-          onClick={() => setShowBookingModal(true)}
-          className="mb-6 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-        >
-          Book New Appointment
-        </button>
-
-        {/* Appointments List */}
-        <div className="space-y-4">
-          {appointments.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
-              <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No appointments yet</p>
-              <p className="text-sm text-gray-500">Book your first appointment above</p>
+        {/* Action Bar */}
+        <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-6 mb-8">
+          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+            {/* Search */}
+            <div className="flex-1 w-full lg:max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-green-600 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Search by doctor or specialty..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                />
+              </div>
             </div>
-          ) : (
-            appointments.map((appointment) => (
+
+            {/* Filter */}
+            <div className="flex items-center gap-3">
+              <Filter className="text-green-600 w-5 h-5" />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-green-500 transition-colors bg-white"
+              >
+                <option value="all">All Status</option>
+                <option value="PENDING">Pending</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+
+            {/* Book Button */}
+            <button
+              onClick={() => setShowBookingModal(true)}
+              disabled={loading}
+              className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg disabled:opacity-50 font-medium"
+            >
+              Book New Appointment
+            </button>
+          </div>
+        </div>
+
+        {/* Appointments Grid */}
+        {filteredAppointments.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-12 text-center">
+            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Calendar className="w-10 h-10 text-green-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-green-900 mb-2">No appointments found</h3>
+            <p className="text-green-700 mb-6">Book your first appointment to get started</p>
+            <button
+              onClick={() => setShowBookingModal(true)}
+              className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+            >
+              Book Appointment
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-6">
+            {filteredAppointments.map((appointment) => (
               <div
                 key={appointment.id}
-                className="border border-gray-200 rounded-lg p-6 hover:border-green-300 transition"
+                className="bg-white rounded-2xl shadow-sm border border-green-100 hover:shadow-md transition-all overflow-hidden"
               >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <User className="w-5 h-5 text-green-600" />
-                      <h3 className="text-lg font-semibold text-green-800">
-                        {appointment.doctorName}
-                      </h3>
-                    </div>
-                    
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <p className="flex items-center gap-2">
-                        <span className="font-medium">Specialty:</span> {appointment.specialty}
-                      </p>
-                      
-                      <p className="flex items-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        {formatDateTime(appointment.appointmentDateTime)}
-                      </p>
-                      
-                      <p className="flex items-center gap-2">
-                        {appointment.mode === 'ONLINE' ? (
-                          <><Video className="w-4 h-4" /> Online Consultation</>
-                        ) : (
-                          <><MapPin className="w-4 h-4" /> In-Person Visit</>
-                        )}
-                      </p>
+                <div className="p-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                    {/* Left Section */}
+                    <div className="flex-1">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="w-14 h-14 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <User className="w-7 h-7 text-green-700" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-xl font-bold text-green-900 mb-1">
+                            {appointment.doctorName}
+                          </h3>
+                          <p className="text-green-700 text-sm">{appointment.specialty}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-18">
+                        <div className="flex items-center gap-3 text-green-800">
+                          <Clock className="w-5 h-5 text-green-600" />
+                          <span className="text-sm font-medium">{formatDateTime(appointment.appointmentDateTime)}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 text-green-800">
+                          {appointment.mode === 'ONLINE' ? (
+                            <>
+                              <Video className="w-5 h-5 text-green-600" />
+                              <span className="text-sm font-medium">Online Consultation</span>
+                            </>
+                          ) : (
+                            <>
+                              <MapPin className="w-5 h-5 text-green-600" />
+                              <span className="text-sm font-medium">In-Person Visit</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
 
                       {appointment.notes && (
-                        <p className="flex items-start gap-2">
-                          <span className="font-medium">Notes:</span>
-                          <span>{appointment.notes}</span>
-                        </p>
-                      )}
-
-                      {appointment.status === 'PENDING' && (
-                        <div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                          <p className="text-sm font-medium text-yellow-800">
-                            ⏳ Waiting for doctor approval
-                          </p>
-                          <p className="text-xs text-yellow-700 mt-1">
-                            The doctor will review and approve your appointment request shortly.
-                          </p>
+                        <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-100">
+                          <p className="text-sm font-medium text-green-900 mb-1">Notes</p>
+                          <p className="text-sm text-green-700">{appointment.notes}</p>
                         </div>
                       )}
 
                       {appointment.status === 'REJECTED' && appointment.rejectionReason && (
-                        <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                          <p className="text-sm font-medium text-red-800 mb-1">
-                            ❌ Appointment Rejected
-                          </p>
-                          <p className="text-sm text-gray-700">
-                            <span className="font-medium">Reason:</span> {appointment.rejectionReason}
-                          </p>
+                        <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-200">
+                          <p className="text-sm font-semibold text-red-900 mb-1">Rejection Reason</p>
+                          <p className="text-sm text-red-700">{appointment.rejectionReason}</p>
+                        </div>
+                      )}
+
+                      {appointment.videoLinkAvailable && appointment.videoConferenceLink && (
+                        <div className="mt-4">
+                          <a
+                            href={appointment.videoConferenceLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg font-medium"
+                          >
+                            <Video className="w-5 h-5" />
+                            Join Video Call
+                          </a>
                         </div>
                       )}
                     </div>
 
-                    {appointment.videoLinkAvailable && appointment.videoConferenceLink && (
-                      <a
-                        href={appointment.videoConferenceLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                      >
-                        Join Video Call
-                      </a>
-                    )}
-                  </div>
+                    {/* Right Section */}
+                    <div className="flex flex-col items-end gap-4 lg:border-l lg:border-green-100 lg:pl-6">
+                      <span className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 ${getStatusColor(appointment.status)}`}>
+                        {appointment.status}
+                      </span>
 
-                  <div className="flex flex-col items-end gap-2">
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        appointment.status === 'PENDING'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : appointment.status === 'SCHEDULED'
-                          ? 'bg-green-100 text-green-700'
-                          : appointment.status === 'REJECTED'
-                          ? 'bg-red-100 text-red-700'
-                          : appointment.status === 'COMPLETED'
-                          ? 'bg-gray-100 text-gray-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {appointment.status}
-                    </span>
-
-                    {appointment.status === 'SCHEDULED' && (
-                      <button
-                        onClick={() => {
-                          setSelectedAppointment(appointment);
-                          setShowCancelModal(true);
-                        }}
-                        className="px-4 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition"
-                      >
-                        Cancel
-                      </button>
-                    )}
-
-                    {appointment.status === 'PENDING' && (
-                      <button
-                        onClick={() => {
-                          setSelectedAppointment(appointment);
-                          setShowCancelModal(true);
-                        }}
-                        className="px-4 py-2 text-orange-600 border border-orange-600 rounded-lg hover:bg-orange-50 transition text-sm"
-                      >
-                        Withdraw Request
-                      </button>
-                    )}
+                      {(appointment.status === 'SCHEDULED' || appointment.status === 'PENDING') && (
+                        <button
+                          onClick={() => {
+                            setSelectedAppointment(appointment);
+                            setShowCancelModal(true);
+                          }}
+                          className="px-6 py-2.5 text-red-600 border-2 border-red-200 rounded-xl hover:bg-red-50 transition-colors font-medium"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Booking Modal */}
         {showBookingModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-green-800">Book Appointment</h2>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+              <div className="sticky top-0 bg-white border-b border-green-100 p-6 flex justify-between items-center rounded-t-3xl">
+                <h2 className="text-2xl font-bold text-green-900">Book Appointment</h2>
                 <button
                   onClick={() => {
                     setShowBookingModal(false);
                     resetBookingForm();
                   }}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-green-600 hover:text-green-700 p-2 hover:bg-green-50 rounded-xl transition-colors"
                 >
                   <X className="w-6 h-6" />
                 </button>
@@ -389,7 +424,7 @@ export default function PatientAppointments() {
               <div className="p-6 space-y-6">
                 {/* Doctor Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-green-900 mb-3">
                     Select Doctor
                   </label>
                   <select
@@ -398,7 +433,7 @@ export default function PatientAppointments() {
                       const doctor = doctors.find(d => d.id === e.target.value);
                       setSelectedDoctor(doctor || null);
                     }}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
                   >
                     <option value="">Choose a doctor...</option>
                     {doctors.map((doctor) => (
@@ -412,7 +447,7 @@ export default function PatientAppointments() {
                 {/* Date Selection */}
                 {selectedDoctor && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-green-900 mb-3">
                       Select Date
                     </label>
                     <input
@@ -420,7 +455,7 @@ export default function PatientAppointments() {
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
                     />
                   </div>
                 )}
@@ -428,21 +463,21 @@ export default function PatientAppointments() {
                 {/* Time Slots */}
                 {selectedDate && availableSlots.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-green-900 mb-3">
                       Available Time Slots
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                       {availableSlots.map((slot, index) => (
                         <button
                           key={index}
                           onClick={() => slot.isAvailable && setSelectedSlot(slot)}
                           disabled={!slot.isAvailable}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                          className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                             selectedSlot === slot
-                              ? 'bg-green-600 text-white'
+                              ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-md'
                               : slot.isAvailable
-                              ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-200'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed border-2 border-gray-200'
                           }`}
                         >
                           {formatTime(slot.startTime)}
@@ -455,31 +490,31 @@ export default function PatientAppointments() {
                 {/* Appointment Mode */}
                 {selectedSlot && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-green-900 mb-3">
                       Consultation Mode
                     </label>
-                    <div className="flex gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <button
                         onClick={() => setAppointmentMode('ONLINE')}
-                        className={`flex-1 px-4 py-3 rounded-lg border-2 transition ${
+                        className={`p-4 rounded-xl border-2 transition-all ${
                           appointmentMode === 'ONLINE'
-                            ? 'border-green-600 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-green-200 hover:border-green-300'
                         }`}
                       >
-                        <Video className="w-5 h-5 mx-auto mb-1" />
-                        <p className="text-sm font-medium">Online</p>
+                        <Video className="w-6 h-6 mx-auto mb-2 text-green-600" />
+                        <p className="text-sm font-semibold text-green-900">Online</p>
                       </button>
                       <button
                         onClick={() => setAppointmentMode('IN_PERSON')}
-                        className={`flex-1 px-4 py-3 rounded-lg border-2 transition ${
+                        className={`p-4 rounded-xl border-2 transition-all ${
                           appointmentMode === 'IN_PERSON'
-                            ? 'border-green-600 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-green-200 hover:border-green-300'
                         }`}
                       >
-                        <MapPin className="w-5 h-5 mx-auto mb-1" />
-                        <p className="text-sm font-medium">In-Person</p>
+                        <MapPin className="w-6 h-6 mx-auto mb-2 text-green-600" />
+                        <p className="text-sm font-semibold text-green-900">In-Person</p>
                       </button>
                     </div>
                   </div>
@@ -488,7 +523,7 @@ export default function PatientAppointments() {
                 {/* Notes */}
                 {selectedSlot && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-green-900 mb-3">
                       Notes (Optional)
                     </label>
                     <textarea
@@ -496,7 +531,7 @@ export default function PatientAppointments() {
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Any specific concerns or symptoms..."
                       rows={3}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-green-500 transition-colors resize-none"
                     />
                   </div>
                 )}
@@ -506,7 +541,7 @@ export default function PatientAppointments() {
                   <button
                     onClick={bookAppointment}
                     disabled={loading}
-                    className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                    className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg disabled:opacity-50 font-semibold text-lg"
                   >
                     {loading ? 'Booking...' : 'Confirm Booking'}
                   </button>
@@ -518,23 +553,23 @@ export default function PatientAppointments() {
 
         {/* Cancel Modal */}
         {showCancelModal && selectedAppointment && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-md w-full">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl">
+              <div className="p-6 border-b border-green-100">
+                <h2 className="text-xl font-bold text-red-600 flex items-center gap-3">
                   <AlertCircle className="w-6 h-6" />
                   Cancel Appointment
                 </h2>
               </div>
 
               <div className="p-6 space-y-4">
-                <p className="text-gray-600">
+                <p className="text-green-800">
                   Are you sure you want to cancel your appointment with{' '}
-                  <strong>{selectedAppointment.doctorName}</strong>?
+                  <strong className="text-green-900">{selectedAppointment.doctorName}</strong>?
                 </p>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-green-900 mb-2">
                     Reason for Cancellation <span className="text-red-500">*</span>
                   </label>
                   <textarea
@@ -542,25 +577,25 @@ export default function PatientAppointments() {
                     onChange={(e) => setCancellationReason(e.target.value)}
                     placeholder="Please provide a reason..."
                     rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border-2 border-green-100 rounded-xl focus:outline-none focus:border-red-500 transition-colors resize-none"
                   />
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
                       setShowCancelModal(false);
                       setCancellationReason('');
                       setSelectedAppointment(null);
                     }}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                    className="flex-1 px-4 py-3 border-2 border-green-200 rounded-xl hover:bg-green-50 transition-colors font-medium text-green-900"
                   >
                     Keep Appointment
                   </button>
                   <button
                     onClick={cancelAppointment}
                     disabled={loading || !cancellationReason.trim()}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                    className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 font-medium"
                   >
                     {loading ? 'Cancelling...' : 'Cancel Appointment'}
                   </button>

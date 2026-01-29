@@ -44,6 +44,7 @@ public class DocumentParser {
      */
     @lombok.Data
     @lombok.Builder
+    @lombok.Getter
     public static class DocumentParseResult {
         private String text;
         private String fileName;
