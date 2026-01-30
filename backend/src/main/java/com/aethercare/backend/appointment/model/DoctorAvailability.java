@@ -1,4 +1,3 @@
-// backend/src/main/java/com/aethercare/backend/appointment/model/DoctorAvailability.java
 package com.aethercare.backend.appointment.model;
 
 import org.springframework.data.annotation.Id;
@@ -11,6 +10,7 @@ import lombok.AllArgsConstructor;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
+import java.util.HashMap;
 import java.util.Map;
 
 @Data
@@ -26,7 +26,7 @@ public class DoctorAvailability {
     @Indexed(unique = true)
     private String doctorId;
     
-    // Default working hours: Monday-Saturday 9-5, Sunday 9-12
+    // Weekly schedule: Monday-Saturday 9-5, Sunday 9-12
     private Map<DayOfWeek, TimeSlot> weeklySchedule;
     
     @Data
@@ -39,16 +39,36 @@ public class DoctorAvailability {
         private boolean isAvailable;
     }
     
+    /**
+     * Creates default availability schedule:
+     * Monday-Saturday: 9 AM - 5 PM
+     * Sunday: 9 AM - 12 PM
+     */
     public static DoctorAvailability createDefault(String doctorId) {
-        Map<DayOfWeek, TimeSlot> schedule = Map.of(
-            DayOfWeek.MONDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.TUESDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.WEDNESDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.THURSDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.FRIDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.SATURDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(17, 0)).isAvailable(true).build(),
-            DayOfWeek.SUNDAY, TimeSlot.builder().startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(12, 0)).isAvailable(true).build()
-        );
+        Map<DayOfWeek, TimeSlot> schedule = new HashMap<>();
+        
+        // Monday to Saturday: 9 AM - 5 PM
+        TimeSlot weekdaySlot = TimeSlot.builder()
+            .startTime(LocalTime.of(9, 0))
+            .endTime(LocalTime.of(17, 0))
+            .isAvailable(true)
+            .build();
+        
+        schedule.put(DayOfWeek.MONDAY, weekdaySlot);
+        schedule.put(DayOfWeek.TUESDAY, weekdaySlot);
+        schedule.put(DayOfWeek.WEDNESDAY, weekdaySlot);
+        schedule.put(DayOfWeek.THURSDAY, weekdaySlot);
+        schedule.put(DayOfWeek.FRIDAY, weekdaySlot);
+        schedule.put(DayOfWeek.SATURDAY, weekdaySlot);
+        
+        // Sunday: 9 AM - 12 PM
+        TimeSlot sundaySlot = TimeSlot.builder()
+            .startTime(LocalTime.of(9, 0))
+            .endTime(LocalTime.of(12, 0))
+            .isAvailable(true)
+            .build();
+        
+        schedule.put(DayOfWeek.SUNDAY, sundaySlot);
         
         return DoctorAvailability.builder()
             .doctorId(doctorId)

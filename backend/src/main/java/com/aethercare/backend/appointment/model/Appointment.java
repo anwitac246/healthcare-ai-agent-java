@@ -16,7 +16,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "appointments")
-@CompoundIndex(name = "doctor_slot_idx", def = "{'doctorId': 1, 'appointmentDateTime': 1}", unique = true)
+@CompoundIndex(name = "doctor_slot_idx", def = "{'doctorId': 1, 'appointmentDateTime': 1}")
 public class Appointment {
     
     @Id
@@ -53,8 +53,8 @@ public class Appointment {
     private Instant videoLinkValidFrom;
     private Instant videoLinkValidUntil;
     
-    // Booking hold mechanism
-    private Instant holdExpiresAt; // 30 minutes hold for doctor approval
+    // Booking hold mechanism - 30 minutes for doctor approval
+    private Instant holdExpiresAt;
     
     @Indexed
     private Instant createdAt;
