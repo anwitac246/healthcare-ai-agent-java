@@ -136,17 +136,28 @@ export default function PatientAppointments() {
         ? '/api/appointments/patient/upcoming'
         : '/api/appointments/patient/past';
       
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const url = `${API_BASE_URL}${endpoint}`;
+      console.log('Loading appointments from:', url);
+      
+      const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
 
+      console.log('Load appointments response status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('Appointments loaded:', data);
+        
         if (activeView === 'upcoming') {
           setUpcomingAppointments(data.data || []);
         } else {
           setPastAppointments(data.data || []);
         }
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to load appointments:', response.status, errorText);
+        setError(`Failed to load appointments: ${response.status}`);
       }
     } catch (error) {
       console.error('Failed to load appointments:', error);
@@ -156,10 +167,40 @@ export default function PatientAppointments() {
     }
   };
 
+  const generateTimeSlots = (date: string): TimeSlot[] => {
+    // Parse the date string (YYYY-MM-DD) and create date in local timezone
+    const [year, month, day] = date.split('-').map(Number);
+    const selectedDay = new Date(year, month - 1, day);
+    const dayOfWeek = selectedDay.getDay(); // 0 = Sunday, 6 = Saturday
+    
+    const slots: TimeSlot[] = [];
+    let startHour = 9;
+    let endHour = dayOfWeek === 0 ? 12 : 17; // Sunday 9-12, others 9-5
+    
+    for (let hour = startHour; hour < endHour; hour++) {
+      // Create slots in LOCAL timezone
+      const slotTime = new Date(year, month - 1, day, hour, 0, 0, 0);
+      
+      const endTime = new Date(year, month - 1, day, hour, 45, 0, 0);
+      
+      slots.push({
+        startTime: slotTime.toISOString(),
+        endTime: endTime.toISOString(),
+        isAvailable: true // Will be updated based on bookings
+      });
+    }
+    
+    return slots;
+  };
+
   const loadAvailableSlots = async () => {
     if (!selectedDoctor || !selectedDate) return;
 
     try {
+      // First, generate all possible slots for the day
+      const allSlots = generateTimeSlots(selectedDate);
+      
+      // Then fetch booked/held slots from the backend
       const response = await fetch(
         `${API_BASE_URL}/api/appointments/slots/${selectedDoctor.id}?date=${selectedDate}`,
         { headers: { 'Authorization': `Bearer ${authToken}` } }
@@ -167,18 +208,78 @@ export default function PatientAppointments() {
 
       if (response.ok) {
         const data = await response.json();
-        setAvailableSlots(data.data || []);
+        const bookedSlots = data.data || [];
+        
+        // Mark slots as unavailable if they're booked or in the past
+        const now = new Date();
+        const updatedSlots = allSlots.map(slot => {
+          const slotTime = new Date(slot.startTime);
+          
+          // Check if slot is in the past
+          if (slotTime < now) {
+            return { ...slot, isAvailable: false };
+          }
+          
+          // Check if slot is booked or on hold
+          const isBooked = bookedSlots.some((bookedSlot: TimeSlot) => {
+            const bookedStart = new Date(bookedSlot.startTime);
+            return Math.abs(slotTime.getTime() - bookedStart.getTime()) < 60000; // Within 1 minute
+          });
+          
+          return { ...slot, isAvailable: !isBooked };
+        });
+        
+        setAvailableSlots(updatedSlots);
+      } else {
+        // If API fails, just show all generated slots
+        const now = new Date();
+        const updatedSlots = allSlots.map(slot => ({
+          ...slot,
+          isAvailable: new Date(slot.startTime) >= now
+        }));
+        setAvailableSlots(updatedSlots);
       }
     } catch (error) {
       console.error('Failed to load slots:', error);
+      // On error, still show generated slots
+      const now = new Date();
+      const allSlots = generateTimeSlots(selectedDate);
+      const updatedSlots = allSlots.map(slot => ({
+        ...slot,
+        isAvailable: new Date(slot.startTime) >= now
+      }));
+      setAvailableSlots(updatedSlots);
     }
   };
 
   const handleBookAppointment = async () => {
-    if (!selectedSlot || !selectedDoctor || !authToken) return;
+    if (!selectedSlot || !selectedDoctor || !authToken) {
+      console.error('Booking validation failed:', {
+        hasSlot: !!selectedSlot,
+        hasDoctor: !!selectedDoctor,
+        hasAuth: !!authToken
+      });
+      alert('Please select a time slot and doctor');
+      return;
+    }
 
     setLoading(true);
     setError(null);
+
+    const bookingData = {
+      doctorId: selectedDoctor.id,
+      appointmentDateTime: selectedSlot.startTime,
+      mode: appointmentMode,
+      notes: notes,
+      durationMinutes: 45
+    };
+
+    console.log('=== BOOKING APPOINTMENT ===');
+    console.log('1. Booking data:', JSON.stringify(bookingData, null, 2));
+    console.log('2. Selected doctor:', selectedDoctor);
+    console.log('3. Selected slot:', selectedSlot);
+    console.log('4. API URL:', `${API_BASE_URL}/api/appointments/book`);
+    console.log('5. Auth token (first 20 chars):', authToken.substring(0, 20) + '...');
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/appointments/book`, {
@@ -187,37 +288,84 @@ export default function PatientAppointments() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({
-          doctorId: selectedDoctor.id,
-          appointmentDateTime: selectedSlot.startTime,
-          mode: appointmentMode,
-          notes: notes,
-          durationMinutes: 45
-        })
+        body: JSON.stringify(bookingData)
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to book appointment');
+      console.log('6. Response status:', response.status);
+      console.log('7. Response status text:', response.statusText);
+      console.log('8. Response headers:', Object.fromEntries(response.headers.entries()));
+
+      const responseText = await response.text();
+      console.log('9. Raw response text:', responseText);
+      console.log('10. Response text length:', responseText.length);
+
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+        console.log('11. Parsed response data:', data);
+      } catch (parseError) {
+        console.error('12. JSON PARSE ERROR:', parseError);
+        console.error('13. Could not parse this text:', responseText);
+        throw new Error(`Server returned invalid JSON. Status: ${response.status}. Response: ${responseText.substring(0, 200)}`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        console.error('14. BOOKING FAILED!');
+        console.error('15. Status code:', response.status);
+        console.error('16. Error data:', JSON.stringify(data, null, 2));
+        console.error('17. Error message:', data.message);
+        console.error('18. Error details:', data.details);
+        console.error('19. Full error object:', data);
+        
+        const errorMessage = data.message 
+          || data.error 
+          || data.details
+          || JSON.stringify(data)
+          || `Booking failed with status ${response.status}`;
+        
+        throw new Error(errorMessage);
+      }
+
+      console.log('20. BOOKING SUCCESSFUL!');
+      console.log('21. Success data:', data);
       alert('Appointment booked successfully! Awaiting doctor approval.');
       setShowBookingModal(false);
       resetBookingForm();
       loadAppointments();
     } catch (err: any) {
-      setError(err.message);
-      alert(err.message);
+      console.error('22. CATCH BLOCK ERROR:');
+      console.error('23. Error object:', err);
+      console.error('24. Error type:', err.constructor.name);
+      console.error('25. Error message:', err.message);
+      console.error('26. Error stack:', err.stack);
+      
+      const errorMessage = err.message || 'An unexpected error occurred while booking';
+      setError(errorMessage);
+      alert(`Booking failed: ${errorMessage}`);
     } finally {
       setLoading(false);
+      console.log('=== END BOOKING ATTEMPT ===');
     }
   };
 
   const handleCancelAppointment = async () => {
-    if (!selectedAppointment || !cancellationReason.trim() || !authToken) return;
+    if (!selectedAppointment || !cancellationReason.trim() || !authToken) {
+      console.error('Cancellation validation failed:', {
+        hasAppointment: !!selectedAppointment,
+        hasReason: !!cancellationReason.trim(),
+        hasAuth: !!authToken
+      });
+      alert('Please provide a cancellation reason');
+      return;
+    }
 
     setLoading(true);
+    
+    const cancelData = { reason: cancellationReason };
+    console.log('Cancelling appointment:', selectedAppointment.id);
+    console.log('Cancel data:', cancelData);
+    console.log('API URL:', `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/cancel`);
+
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/cancel`,
@@ -227,21 +375,37 @@ export default function PatientAppointments() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
           },
-          body: JSON.stringify({ reason: cancellationReason })
+          body: JSON.stringify(cancelData)
         }
       );
 
-      if (!response.ok) {
-        throw new Error('Failed to cancel appointment');
+      console.log('Cancel response status:', response.status);
+      
+      const responseText = await response.text();
+      console.log('Cancel response:', responseText);
+
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('Failed to parse cancel response:', parseError);
       }
 
+      if (!response.ok) {
+        console.error('Cancellation failed:', data);
+        const errorMessage = data?.message || data?.error || `Failed with status ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      console.log('Cancellation successful');
       alert('Appointment cancelled successfully');
       setShowCancelModal(false);
       setCancellationReason('');
       setSelectedAppointment(null);
       loadAppointments();
     } catch (err: any) {
-      alert(err.message);
+      console.error('Cancellation error:', err);
+      alert(`Cancellation failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
