@@ -2,6 +2,7 @@ package com.aethercare.backend.auth.controller;
 
 import com.aethercare.backend.auth.model.AuthResponse;
 import com.aethercare.backend.auth.model.LoginRequest;
+import com.aethercare.backend.auth.model.PasswordResetRequest;
 import com.aethercare.backend.auth.model.RegisterRequest;
 import com.aethercare.backend.auth.service.AuthService;
 import com.aethercare.backend.common.response.ApiResponse;
@@ -42,5 +43,13 @@ public class AuthController {
     ) {
         AuthResponse response = authService.login(request, UserRole.DOCTOR);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+    
+    @PostMapping("/password-reset/verify")
+    public ResponseEntity<ApiResponse<String>> verifyPasswordResetEligibility(
+            @Valid @RequestBody PasswordResetRequest request
+    ) {
+        authService.verifyPasswordResetEligibility(request.email(), request.role());
+        return ResponseEntity.ok(ApiResponse.success("User verified. You may proceed with password reset."));
     }
 }

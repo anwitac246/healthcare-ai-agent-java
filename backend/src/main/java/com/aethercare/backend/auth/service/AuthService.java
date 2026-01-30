@@ -85,4 +85,19 @@ public class AuthService {
             "Login successful"
         );
     }
+    
+    public void verifyPasswordResetEligibility(String email, UserRole role) {
+        User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new UnauthorizedException("No account found with this email address."));
+        
+        if (user.getRole() != role) {
+            throw new UnauthorizedException(
+                String.format("This email is registered as a %s. Please use the %s password reset.", 
+                    user.getRole().name().toLowerCase(), 
+                    user.getRole().name().toLowerCase())
+            );
+        }
+        
+        logger.info("Password reset verification successful for {} {}", role, email);
+    }
 }

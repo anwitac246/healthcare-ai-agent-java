@@ -1,10 +1,9 @@
-// src/app/patient/appointments/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import { Calendar, Clock, Video, MapPin, User, X, Search, ChevronLeft, ChevronRight, Home, FileText, Settings, LogOut, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
+import Navbar from "../../components/navbar";
 interface TimeSlot {
   startTime: string;
   endTime: string;
@@ -521,6 +520,7 @@ export default function PatientAppointments() {
 
   return (
     <div className="min-h-screen bg-white flex">
+      <Navbar/>
       {/* Sidebar */}
       <div className="w-64 border-r border-gray-200 flex flex-col">
         <div className="p-6 border-b border-gray-200">

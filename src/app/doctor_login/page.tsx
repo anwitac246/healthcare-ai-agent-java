@@ -1,14 +1,18 @@
 "use client"
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from '../components/navbar';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../../firebase-config';
+import { useRouter } from 'next/navigation';
 
 const DoctorLoginPage = () => {
+  const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -22,9 +26,34 @@ const DoctorLoginPage = () => {
     yearsOfExperience: '',
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      
+      if (token && userData) {
+        try {
+          const user = JSON.parse(userData);
+          // Redirect to dashboard if already logged in
+          if (user.role === 'DOCTOR') {
+            router.push('/doctor/dashboard');
+          }
+        } catch (e) {
+          // Invalid user data, clear storage
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userData');
+        }
+      }
+    };
+
+    checkAuth();
+  }, [router]);
 
   const sendRegistrationToBackend = async (firebaseUid: string, token: string, userData: any) => {
     try {
@@ -39,7 +68,7 @@ const DoctorLoginPage = () => {
           firstName: userData.firstName,
           lastName: userData.lastName,
           email: userData.email,
-          role: 'DOCTOR', // Always DOCTOR for this page
+          role: 'DOCTOR',
           phoneNumber: userData.phoneNumber,
           medicalLicenseNumber: userData.medicalLicenseNumber,
           specialization: userData.specialization,
@@ -56,7 +85,6 @@ const DoctorLoginPage = () => {
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Error registering doctor:', error);
       throw error;
     }
   };
@@ -86,7 +114,30 @@ const DoctorLoginPage = () => {
       
       return data;
     } catch (error) {
-      console.error('Error during doctor login:', error);
+      throw error;
+    }
+  };
+
+  const verifyPasswordResetEligibility = async (email: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/password-reset/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email,
+          role: 'DOCTOR'
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Verification failed');
+      }
+      
+      return true;
+    } catch (error) {
       throw error;
     }
   };
@@ -99,8 +150,49 @@ const DoctorLoginPage = () => {
     }));
   };
 
+  const handleForgotPassword = async () => {
+    setError('');
+    setSuccess('');
+
+    if (!resetEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // First verify with backend that user exists and is a doctor
+      await verifyPasswordResetEligibility(resetEmail);
+      
+      // If verification passes, send Firebase password reset email
+      await sendPasswordResetEmail(auth, resetEmail);
+      
+      setSuccess('Password reset email sent! Please check your inbox.');
+      setResetEmail('');
+      
+      // Close forgot password modal after 3 seconds
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setSuccess('');
+      }, 3000);
+    } catch (error: any) {
+      // Handle backend verification errors
+      if (error.message) {
+        setError(error.message);
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else {
+        setError('Failed to send password reset email. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async () => {
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
@@ -108,16 +200,25 @@ const DoctorLoginPage = () => {
       const user = userCredential.user;
       const token = await user.getIdToken();
       
-      const response = await sendLoginToBackend(user.uid, token);
-      
-      console.log('Doctor login successful:', response);
+      await sendLoginToBackend(user.uid, token);
       
       window.location.href = '/doctor/dashboard';
       
-    } catch (error: unknown) {
-      console.error('Login error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to login. Please check your credentials.';
-      setError(errorMessage);
+    } catch (error: any) {
+      // Handle Firebase auth errors
+      if (error.code === 'auth/invalid-credential' || 
+          error.code === 'auth/user-not-found' || 
+          error.code === 'auth/wrong-password' ||
+          error.code === 'auth/invalid-email') {
+        setError('Either the email or password is incorrect.');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many failed login attempts. Please try again later.');
+      } else if (error.message && !error.code) {
+        // Backend error
+        setError(error.message);
+      } else {
+        setError('Failed to login. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -125,6 +226,7 @@ const DoctorLoginPage = () => {
 
   const handleSignUp = async () => {
     setError('');
+    setSuccess('');
 
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
       setError('Please fill in all required fields.');
@@ -158,7 +260,7 @@ const DoctorLoginPage = () => {
 
       const token = await user.getIdToken();
 
-      const response = await sendRegistrationToBackend(user.uid, token, {
+      await sendRegistrationToBackend(user.uid, token, {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -168,18 +270,21 @@ const DoctorLoginPage = () => {
         clinicLocation: formData.clinicLocation,
         yearsOfExperience: formData.yearsOfExperience,
       });
-
-      console.log('Doctor sign up successful:', response);
-      
-      localStorage.setItem('authToken', token);
-      localStorage.setItem('userData', JSON.stringify(response.data));
       
       window.location.href = '/doctor/dashboard';
 
-    } catch (error: unknown) {
-      console.error('Sign up error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create account. Please try again.';
-      setError(errorMessage);
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        setError('An account with this email already exists.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else if (error.code === 'auth/weak-password') {
+        setError('Password is too weak. Please use a stronger password.');
+      } else if (error.message && !error.code) {
+        setError(error.message);
+      } else {
+        setError('Failed to create account. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -188,6 +293,7 @@ const DoctorLoginPage = () => {
   const toggleAuthMode = () => {
     setIsLogin(!isLogin);
     setError('');
+    setSuccess('');
   };
 
   return (
@@ -213,6 +319,62 @@ const DoctorLoginPage = () => {
       <div className="relative bg-white border-b border-green-100 mb-20">
         <Navbar />
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-green-900 mb-4">Reset Password</h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Enter your doctor account email address and we'll send you a link to reset your password.
+            </p>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-600 text-sm">{error}</p>
+              </div>
+            )}
+
+            {success && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-600 text-sm">{success}</p>
+              </div>
+            )}
+
+            <input
+              type="email"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleForgotPassword()}
+              className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm mb-4"
+              placeholder="doctor@example.com"
+              disabled={loading}
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setError('');
+                  setSuccess('');
+                  setResetEmail('');
+                }}
+                disabled={loading}
+                className="flex-1 px-4 py-2.5 border-2 border-green-200 text-green-700 rounded-lg hover:bg-green-50 transition-colors font-semibold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleForgotPassword}
+                disabled={loading}
+                className="flex-1 bg-green-700 text-white py-2.5 rounded-lg hover:bg-green-800 transition-colors font-semibold disabled:opacity-50"
+              >
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Auth Section */}
       <div className="flex min-h-[calc(100vh-80px)]">
@@ -254,6 +416,13 @@ const DoctorLoginPage = () => {
               </div>
             )}
 
+            {/* Success Message */}
+            {success && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-600 text-sm">{success}</p>
+              </div>
+            )}
+
             {isLogin ? (
               /* Login Form */
               <div className="space-y-4">
@@ -266,6 +435,7 @@ const DoctorLoginPage = () => {
                     id="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                     className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm"
                     placeholder="doctor@example.com"
                     disabled={loading}
@@ -281,6 +451,7 @@ const DoctorLoginPage = () => {
                     id="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                     className="w-full text-green-950 px-3.5 py-2.5 border-2 border-green-200 rounded-lg focus:outline-none focus:border-green-600 transition-colors text-sm"
                     placeholder="Enter your password"
                     disabled={loading}
@@ -301,9 +472,12 @@ const DoctorLoginPage = () => {
                       Remember me
                     </label>
                   </div>
-                  <a href="#" className="text-sm text-green-700 hover:text-green-600 font-medium">
+                  <button 
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-sm text-green-700 hover:text-green-600 font-medium"
+                  >
                     Forgot password?
-                  </a>
+                  </button>
                 </div>
 
                 <button
