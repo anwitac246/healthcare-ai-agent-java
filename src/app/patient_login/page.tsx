@@ -41,9 +41,9 @@ const AuthPage = () => {
       if (token && userData) {
         try {
           const user = JSON.parse(userData);
-          // Redirect to dashboard if already logged in
+          // Redirect to appointment page if already logged in
           if (user.role === 'PATIENT') {
-            router.push('/patient/dashboard');
+            router.push('/patient/appointment');
           }
         } catch (e) {
           // Invalid user data, clear storage
@@ -201,7 +201,7 @@ const AuthPage = () => {
       
       await sendLoginToBackend(user.uid, token);
       
-      window.location.href = '/patient/dashboard';
+      window.location.href = '/patient/appointment';
       
     } catch (error: any) {
       // Handle Firebase auth errors
@@ -268,7 +268,7 @@ const AuthPage = () => {
         gender: formData.gender,
       });
       
-      window.location.href = '/patient/dashboard';
+      window.location.href = '/patient/appointment';
 
     } catch (error: any) {
       if (error.code === 'auth/email-already-in-use') {
@@ -301,7 +301,7 @@ const AuthPage = () => {
         // Try to login
         try {
           await sendLoginToBackend(user.uid, token);
-          window.location.href = '/patient/dashboard';
+          window.location.href = '/patient/appointment';
         } catch (loginError) {
           // User doesn't exist, need to register
           setSocialAuthUser(user);
@@ -364,7 +364,7 @@ const AuthPage = () => {
         gender: formData.gender,
       });
       
-      window.location.href = '/patient/dashboard';
+      window.location.href = '/patient/appointment';
       
     } catch (error: any) {
       if (error.message) {

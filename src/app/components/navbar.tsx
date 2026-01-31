@@ -21,14 +21,15 @@ const Navbar = () => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('userType');
     setIsLoggedIn(false);
-    router.push('/'); // Redirect to home page
+    router.push('/');
   };
 
   const dashboardLink = userType === 'doctor' ? '/doctor/dashboard' : '/patient/dashboard';
+  const appointmentLink = userType === 'doctor' ? '/doctor/appointments' : '/patient/appointments';
 
   return (
-    <nav className="absolute top-0 left-0 right-0 z-20 px-4 sm:px-8 py-4 sm:py-6">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <nav className="fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between">
         <Link href="/"><div className="text-xl sm:text-2xl font-bold text-green-900">Aethercare</div></Link>
         
         {/* Desktop Navigation */}
@@ -54,7 +55,7 @@ const Navbar = () => {
                     Free Diagnosis
                   </div>
                 </Link>
-                <Link href="/appointment">
+                <Link href={appointmentLink}>
                   <div className="px-4 py-2 text-green-800 hover:bg-green-50 transition-colors cursor-pointer">
                     Book Appointment
                   </div>
@@ -116,7 +117,7 @@ const Navbar = () => {
 
       {/* Mobile Menu */}
       {isMenuOpen && (
-        <div className="md:hidden mt-4 bg-white/95 backdrop-blur-sm rounded-lg py-4 px-4 shadow-lg border border-green-100">
+        <div className="md:hidden mt-0 bg-white backdrop-blur-sm py-4 px-4 shadow-lg border-t border-gray-200">
           <div className="flex flex-col space-y-4">
             <Link href="/" className="text-green-800 hover:text-green-600 transition-colors py-2 font-medium">Home</Link>
             
@@ -138,7 +139,7 @@ const Navbar = () => {
                       Free Diagnosis
                     </div>
                   </Link>
-                  <Link href="/appointment">
+                  <Link href={appointmentLink}>
                     <div className="text-green-700 hover:text-green-600 transition-colors py-2">
                       Book Appointment
                     </div>

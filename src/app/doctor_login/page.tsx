@@ -40,9 +40,9 @@ const DoctorLoginPage = () => {
       if (token && userData) {
         try {
           const user = JSON.parse(userData);
-          // Redirect to dashboard if already logged in
+          // Redirect to appointment page if already logged in
           if (user.role === 'DOCTOR') {
-            router.push('/doctor/dashboard');
+            router.push('/doctor/appointment');
           }
         } catch (e) {
           // Invalid user data, clear storage
@@ -202,7 +202,7 @@ const DoctorLoginPage = () => {
       
       await sendLoginToBackend(user.uid, token);
       
-      window.location.href = '/doctor/dashboard';
+      window.location.href = '/doctor/appointment';
       
     } catch (error: any) {
       // Handle Firebase auth errors
@@ -271,7 +271,7 @@ const DoctorLoginPage = () => {
         yearsOfExperience: formData.yearsOfExperience,
       });
       
-      window.location.href = '/doctor/dashboard';
+      window.location.href = '/doctor/appointment';
 
     } catch (error: any) {
       if (error.code === 'auth/email-already-in-use') {
