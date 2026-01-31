@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, Video, MapPin, User, X, Search, ChevronLeft, ChevronRight, Home, FileText, LogOut } from 'lucide-react';
+import { Calendar, Clock, Video, MapPin, User, X, Search, ChevronLeft, ChevronRight, Home, FileText, LogOut, Edit2, Save, Download, Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Navbar from "../../components/navbar";
 
@@ -34,6 +34,28 @@ interface Appointment {
   rejectionReason?: string;
 }
 
+interface Report {
+  id: string;
+  patientName: string;
+  diagnosis: string;
+  symptoms: string[];
+  medications: string[];
+  careInstructions: string[];
+  confidence: number;
+  generatedAt: string;
+  downloadUrl: string;
+}
+
+interface UserProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  dateOfBirth: string;
+  gender: string;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 export default function PatientAppointments() {
@@ -41,6 +63,8 @@ export default function PatientAppointments() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'appointments' | 'reports'>('dashboard');
   
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
@@ -61,8 +85,13 @@ export default function PatientAppointments() {
   
   const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
   const [pastAppointments, setPastAppointments] = useState<Appointment[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileData, setProfileData] = useState<UserProfile | null>(null);
+  const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -71,9 +100,15 @@ export default function PatientAppointments() {
   useEffect(() => {
     if (authToken) {
       loadDoctors();
-      loadAppointments();
+      if (activeSection === 'appointments') {
+        loadAppointments();
+      } else if (activeSection === 'reports') {
+        loadReports();
+      } else if (activeSection === 'dashboard') {
+        loadProfile();
+      }
     }
-  }, [authToken, activeView]);
+  }, [authToken, activeView, activeSection]);
 
   useEffect(() => {
     if (selectedDoctor && selectedDate) {
@@ -109,6 +144,101 @@ export default function PatientAppointments() {
       router.push('/patient_login');
     } finally {
       setIsAuthChecking(false);
+    }
+  };
+
+  const loadProfile = async () => {
+    if (!authToken) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setProfileData(data.data);
+        setEditedProfile(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!authToken || !editedProfile) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(editedProfile)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setProfileData(data.data);
+        setIsEditingProfile(false);
+        alert('Profile updated successfully');
+      } else {
+        throw new Error('Failed to update profile');
+      }
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+      alert('Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadReports = async () => {
+    if (!authToken) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reports/patient`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setReports(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadReport = async (reportId: string) => {
+    if (!authToken) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}/download`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `medical-report-${reportId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Failed to download report:', error);
     }
   };
 
@@ -273,7 +403,9 @@ export default function PatientAppointments() {
       alert('Appointment booked successfully! Awaiting doctor approval.');
       setShowBookingModal(false);
       resetBookingForm();
-      loadAppointments();
+      if (activeSection === 'appointments') {
+        loadAppointments();
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'An unexpected error occurred while booking';
       setError(errorMessage);
@@ -321,7 +453,9 @@ export default function PatientAppointments() {
       setShowCancelModal(false);
       setCancellationReason('');
       setSelectedAppointment(null);
-      loadAppointments();
+      if (activeSection === 'appointments') {
+        loadAppointments();
+      }
     } catch (err: any) {
       alert(`Cancellation failed: ${err.message}`);
     } finally {
@@ -428,7 +562,7 @@ export default function PatientAppointments() {
 
   if (isAuthChecking) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-green-50 to-white">
+      <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-700 mx-auto"></div>
           <p className="text-green-800 mt-6 font-medium">Loading your portal...</p>
@@ -438,43 +572,52 @@ export default function PatientAppointments() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50">
+    <div className="min-h-screen bg-white">
       <Navbar />
       
       <div className="flex pt-16">
-        {/* Sidebar */}
-        <div className="w-72 min-h-screen bg-white border-r border-gray-200 shadow-sm fixed left-0 top-16">
-          
-
+        <div className="w-72 min-h-screen bg-white border-r border-gray-100 shadow-sm fixed left-0 top-16">
           <nav className="flex-1 p-4 mt-10">
             <div className="space-y-2">
-              <a
-                href="/patient/dashboard"
-                className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-all duration-200 group"
+              <button
+                onClick={() => setActiveSection('dashboard')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                  activeSection === 'dashboard'
+                    ? 'bg-green-700 text-white shadow-md'
+                    : 'text-gray-700 hover:bg-green-50 hover:text-green-700'
+                }`}
               >
-                <Home className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                <Home className="w-5 h-5" />
                 <span className="font-medium">Dashboard</span>
-              </a>
-              <a
-                href="/patient/appointments"
-                className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-green-700 to-green-600 text-white rounded-lg shadow-md transition-all duration-200"
+              </button>
+              <button
+                onClick={() => setActiveSection('appointments')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                  activeSection === 'appointments'
+                    ? 'bg-green-700 text-white shadow-md'
+                    : 'text-gray-700 hover:bg-green-50 hover:text-green-700'
+                }`}
               >
                 <Calendar className="w-5 h-5" />
                 <span className="font-medium">Appointments</span>
-              </a>
-              <a
-                href="/patient/reports"
-                className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-all duration-200 group"
+              </button>
+              <button
+                onClick={() => setActiveSection('reports')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                  activeSection === 'reports'
+                    ? 'bg-green-700 text-white shadow-md'
+                    : 'text-gray-700 hover:bg-green-50 hover:text-green-700'
+                }`}
               >
-                <FileText className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                <FileText className="w-5 h-5" />
                 <span className="font-medium">Reports</span>
-              </a>
+              </button>
             </div>
           </nav>
 
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100 bg-white">
-            <div className="flex items-center gap-3 mb-4 p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
-              <div className="w-12 h-12 bg-white border-2 border-green-300 rounded-full flex items-center justify-center shadow-sm">
+            <div className="flex items-center gap-3 mb-4 p-3 bg-green-50 rounded-lg">
+              <div className="w-12 h-12 bg-white border-2 border-green-200 rounded-full flex items-center justify-center shadow-sm">
                 <User className="w-6 h-6 text-green-700" />
               </div>
               <div className="flex-1 min-w-0">
@@ -486,7 +629,7 @@ export default function PatientAppointments() {
             </div>
             <button 
               onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium shadow-sm"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium shadow-sm"
             >
               <LogOut className="w-4 h-4" />
               Logout
@@ -494,176 +637,382 @@ export default function PatientAppointments() {
           </div>
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 ml-72 overflow-auto">
           <div className="max-w-[1400px] mx-auto px-8 py-8">
-            {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">My Appointments</h1>
-              <p className="text-gray-600 text-lg">Manage and track your healthcare appointments</p>
-            </div>
-
-            {/* Action Bar */}
-            <div className="mb-8 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setActiveView('upcoming')}
-                  className={`px-6 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
-                    activeView === 'upcoming'
-                      ? 'bg-gradient-to-r from-green-700 to-green-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:border-green-500 hover:text-green-700'
-                  }`}
-                >
-                  Upcoming
-                </button>
-                <button
-                  onClick={() => setActiveView('past')}
-                  className={`px-6 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
-                    activeView === 'past'
-                      ? 'bg-gradient-to-r from-green-700 to-green-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:border-green-500 hover:text-green-700'
-                  }`}
-                >
-                  Past
-                </button>
-              </div>
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="px-6 py-2.5 bg-gradient-to-r from-green-700 to-green-600 text-white rounded-lg hover:shadow-lg transition-all duration-200 font-semibold shadow-md"
-              >
-                + Book Appointment
-              </button>
-            </div>
-
-            {/* Search */}
-            <div className="mb-6">
-              <div className="relative max-w-md">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Search appointments..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm"
-                />
-              </div>
-            </div>
-
-            {/* Appointments List */}
-            <div className="space-y-4">
-              {loading ? (
-                <div className="text-center py-20">
-                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-700 mx-auto"></div>
-                  <p className="text-gray-600 mt-6 font-medium">Loading appointments...</p>
+            {activeSection === 'dashboard' && (
+              <div>
+                <div className="mb-8 flex items-center justify-between">
+                  <div>
+                    <h1 className="text-4xl font-bold text-gray-900 mb-2">My Profile</h1>
+                    <p className="text-gray-600 text-lg">Manage your personal information</p>
+                  </div>
+                  {!isEditingProfile ? (
+                    <button
+                      onClick={() => setIsEditingProfile(true)}
+                      className="flex items-center gap-2 px-6 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-all shadow-md font-medium"
+                    >
+                      <Edit2 className="w-5 h-5" />
+                      Edit Profile
+                    </button>
+                  ) : (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          setIsEditingProfile(false);
+                          setEditedProfile(profileData);
+                        }}
+                        className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={saveProfile}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-6 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-all shadow-md font-medium disabled:opacity-50"
+                      >
+                        <Save className="w-5 h-5" />
+                        Save Changes
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ) : filteredAppointments.length === 0 ? (
-                <div className="bg-white border border-gray-200 rounded-xl p-20 text-center shadow-sm">
-                  <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600 text-lg">No {activeView} appointments found</p>
-                </div>
-              ) : (
-                filteredAppointments.map((appointment) => (
-                  <div key={appointment.id} className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-start gap-4 mb-4">
-                          <div className="w-14 h-14 bg-gradient-to-br from-green-100 to-green-50 border-2 border-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
-                            <User className="w-7 h-7 text-green-700" />
-                          </div>
-                          <div>
-                            <h3 className="text-xl font-bold text-gray-900">{appointment.doctorName}</h3>
-                            <p className="text-sm text-gray-600 mt-1">{appointment.doctorSpecialization}</p>
-                          </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                          <div className="flex items-center gap-2 text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
-                            <Clock className="w-4 h-4 text-green-600" />
-                            <span className="font-medium">{formatDateTime(appointment.appointmentDateTime)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
-                            {appointment.mode === 'ONLINE' ? <Video className="w-4 h-4 text-green-600" /> : <MapPin className="w-4 h-4 text-green-600" />}
-                            <span className="font-medium">{appointment.mode === 'ONLINE' ? 'Online Consultation' : 'In-Person Visit'}</span>
-                          </div>
-                        </div>
-
-                        {appointment.status === 'PENDING' && appointment.holdExpiresAt && (
-                          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                            <Clock className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="text-xs font-semibold text-amber-900">Awaiting Doctor Approval</p>
-                              <p className="text-xs text-amber-700 mt-1">
-                                Slot held until {formatTime(appointment.holdExpiresAt)} (expires in {getTimeUntilExpiry(appointment.holdExpiresAt)})
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {appointment.notes && (
-                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                            <p className="text-xs font-semibold text-blue-900 mb-1">Notes</p>
-                            <p className="text-sm text-blue-800">{appointment.notes}</p>
-                          </div>
-                        )}
-
-                        {appointment.rejectionReason && (
-                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
-                            <p className="text-xs font-semibold text-red-700 mb-1">Rejection Reason</p>
-                            <p className="text-sm text-red-600">{appointment.rejectionReason}</p>
-                          </div>
-                        )}
-
-                        {appointment.videoLinkAvailable && appointment.videoConferenceLink && (
-                          <a
-                            href={appointment.videoConferenceLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-700 to-green-600 text-white rounded-lg hover:shadow-lg transition-all duration-200 text-sm font-medium"
-                          >
-                            <Video className="w-4 h-4" />
-                            Join Video Call
-                          </a>
+                {loading ? (
+                  <div className="text-center py-20">
+                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-700 mx-auto"></div>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                        {isEditingProfile ? (
+                          <input
+                            type="text"
+                            value={editedProfile?.firstName || ''}
+                            onChange={(e) => setEditedProfile(prev => prev ? {...prev, firstName: e.target.value} : null)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-medium py-3">{profileData?.firstName}</p>
                         )}
                       </div>
-
-                      <div className="flex flex-col items-end gap-3">
-                        <span className={`px-4 py-1.5 text-xs font-semibold rounded-full ${
-                          appointment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
-                          appointment.status === 'SCHEDULED' ? 'bg-green-100 text-green-700' :
-                          appointment.status === 'COMPLETED' ? 'bg-gray-100 text-gray-700' :
-                          appointment.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                          appointment.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {appointment.status}
-                        </span>
-
-                        {(appointment.status === 'SCHEDULED' || appointment.status === 'PENDING') && activeView === 'upcoming' && (
-                          <button
-                            onClick={() => {
-                              setSelectedAppointment(appointment);
-                              setShowCancelModal(true);
-                            }}
-                            className="px-4 py-2 text-sm text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-all duration-200 font-medium"
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                        {isEditingProfile ? (
+                          <input
+                            type="text"
+                            value={editedProfile?.lastName || ''}
+                            onChange={(e) => setEditedProfile(prev => prev ? {...prev, lastName: e.target.value} : null)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-medium py-3">{profileData?.lastName}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <p className="text-gray-900 font-medium py-3">{profileData?.email}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                        {isEditingProfile ? (
+                          <input
+                            type="tel"
+                            value={editedProfile?.phoneNumber || ''}
+                            onChange={(e) => setEditedProfile(prev => prev ? {...prev, phoneNumber: e.target.value} : null)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-medium py-3">{profileData?.phoneNumber}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
+                        {isEditingProfile ? (
+                          <input
+                            type="date"
+                            value={editedProfile?.dateOfBirth || ''}
+                            onChange={(e) => setEditedProfile(prev => prev ? {...prev, dateOfBirth: e.target.value} : null)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-medium py-3">{profileData?.dateOfBirth}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                        {isEditingProfile ? (
+                          <select
+                            value={editedProfile?.gender || ''}
+                            onChange={(e) => setEditedProfile(prev => prev ? {...prev, gender: e.target.value} : null)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           >
-                            Cancel
-                          </button>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                          </select>
+                        ) : (
+                          <p className="text-gray-900 font-medium py-3">{profileData?.gender}</p>
                         )}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'appointments' && (
+              <div>
+                <div className="mb-8">
+                  <h1 className="text-4xl font-bold text-gray-900 mb-2">My Appointments</h1>
+                  <p className="text-gray-600 text-lg">Manage and track your healthcare appointments</p>
+                </div>
+
+                <div className="mb-8 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setActiveView('upcoming')}
+                      className={`px-6 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
+                        activeView === 'upcoming'
+                          ? 'bg-green-700 text-white shadow-md'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:border-green-500 hover:text-green-700'
+                      }`}
+                    >
+                      Upcoming
+                    </button>
+                    <button
+                      onClick={() => setActiveView('past')}
+                      className={`px-6 py-2.5 font-semibold rounded-lg transition-all duration-200 ${
+                        activeView === 'past'
+                          ? 'bg-green-700 text-white shadow-md'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:border-green-500 hover:text-green-700'
+                      }`}
+                    >
+                      Past
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowBookingModal(true)}
+                    className="px-6 py-2.5 bg-green-700 text-white rounded-lg hover:shadow-lg transition-all duration-200 font-semibold shadow-md"
+                  >
+                    + Book Appointment
+                  </button>
+                </div>
+
+                <div className="mb-6">
+                  <div className="relative max-w-md">
+                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="text"
+                      placeholder="Search appointments..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {loading ? (
+                    <div className="text-center py-20">
+                      <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-700 mx-auto"></div>
+                      <p className="text-gray-600 mt-6 font-medium">Loading appointments...</p>
+                    </div>
+                  ) : filteredAppointments.length === 0 ? (
+                    <div className="bg-white border border-gray-200 rounded-xl p-20 text-center shadow-sm">
+                      <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-600 text-lg">No {activeView} appointments found</p>
+                    </div>
+                  ) : (
+                    filteredAppointments.map((appointment) => (
+                      <div key={appointment.id} className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-start gap-4 mb-4">
+                              <div className="w-14 h-14 bg-green-50 border-2 border-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                                <User className="w-7 h-7 text-green-700" />
+                              </div>
+                              <div>
+                                <h3 className="text-xl font-bold text-gray-900">{appointment.doctorName}</h3>
+                                <p className="text-sm text-gray-600 mt-1">{appointment.doctorSpecialization}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                              <div className="flex items-center gap-2 text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
+                                <Clock className="w-4 h-4 text-green-600" />
+                                <span className="font-medium">{formatDateTime(appointment.appointmentDateTime)}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
+                                {appointment.mode === 'ONLINE' ? <Video className="w-4 h-4 text-green-600" /> : <MapPin className="w-4 h-4 text-green-600" />}
+                                <span className="font-medium">{appointment.mode === 'ONLINE' ? 'Online Consultation' : 'In-Person Visit'}</span>
+                              </div>
+                            </div>
+
+                            {appointment.status === 'PENDING' && appointment.holdExpiresAt && (
+                              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                                <Clock className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <p className="text-xs font-semibold text-amber-900">Awaiting Doctor Approval</p>
+                                  <p className="text-xs text-amber-700 mt-1">
+                                    Slot held until {formatTime(appointment.holdExpiresAt)} (expires in {getTimeUntilExpiry(appointment.holdExpiresAt)})
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {appointment.notes && (
+                              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                                <p className="text-xs font-semibold text-blue-900 mb-1">Notes</p>
+                                <p className="text-sm text-blue-800">{appointment.notes}</p>
+                              </div>
+                            )}
+
+                            {appointment.rejectionReason && (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+                                <p className="text-xs font-semibold text-red-700 mb-1">Rejection Reason</p>
+                                <p className="text-sm text-red-600">{appointment.rejectionReason}</p>
+                              </div>
+                            )}
+
+                            {appointment.videoLinkAvailable && appointment.videoConferenceLink && (
+                              <a
+                                href={appointment.videoConferenceLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-700 text-white rounded-lg hover:shadow-lg transition-all duration-200 text-sm font-medium"
+                              >
+                                <Video className="w-4 h-4" />
+                                Join Video Call
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col items-end gap-3">
+                            <span className={`px-4 py-1.5 text-xs font-semibold rounded-full ${
+                              appointment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                              appointment.status === 'SCHEDULED' ? 'bg-green-100 text-green-700' :
+                              appointment.status === 'COMPLETED' ? 'bg-gray-100 text-gray-700' :
+                              appointment.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                              appointment.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {appointment.status}
+                            </span>
+
+                            {(appointment.status === 'SCHEDULED' || appointment.status === 'PENDING') && activeView === 'upcoming' && (
+                              <button
+                                onClick={() => {
+                                  setSelectedAppointment(appointment);
+                                  setShowCancelModal(true);
+                                }}
+                                className="px-4 py-2 text-sm text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-all duration-200 font-medium"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'reports' && (
+              <div>
+                <div className="mb-8">
+                  <h1 className="text-4xl font-bold text-gray-900 mb-2">Medical Reports</h1>
+                  <p className="text-gray-600 text-lg">View and download your medical reports</p>
+                </div>
+
+                {loading ? (
+                  <div className="text-center py-20">
+                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-200 border-t-green-700 mx-auto"></div>
+                    <p className="text-gray-600 mt-6 font-medium">Loading reports...</p>
+                  </div>
+                ) : reports.length === 0 ? (
+                  <div className="bg-white border border-gray-200 rounded-xl p-20 text-center shadow-sm">
+                    <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 text-lg">No reports available</p>
+                    <p className="text-gray-500 text-sm mt-2">Your medical reports will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {reports.map((report) => (
+                      <div key={report.id} className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-start gap-4 mb-4">
+                              <div className="w-14 h-14 bg-green-50 border-2 border-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                                <FileText className="w-7 h-7 text-green-700" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="text-xl font-bold text-gray-900">{report.diagnosis}</h3>
+                                <p className="text-sm text-gray-600 mt-1">Generated on {formatDateTime(report.generatedAt)}</p>
+                                <div className="mt-2">
+                                  <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                                    Confidence: {report.confidence}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                              <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs font-semibold text-gray-700 mb-2">Symptoms</p>
+                                <ul className="text-sm text-gray-600 space-y-1">
+                                  {report.symptoms.map((symptom, idx) => (
+                                    <li key={idx}>{symptom}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                              <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs font-semibold text-gray-700 mb-2">Medications</p>
+                                <ul className="text-sm text-gray-600 space-y-1">
+                                  {report.medications.map((med, idx) => (
+                                    <li key={idx}>{med}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <p className="text-xs font-semibold text-blue-900 mb-2">Care Instructions</p>
+                              <ul className="text-sm text-blue-800 space-y-1">
+                                {report.careInstructions.map((instruction, idx) => (
+                                  <li key={idx}>{instruction}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2 ml-6">
+                            <button
+                              onClick={() => downloadReport(report.id)}
+                              className="flex items-center gap-2 px-4 py-2 text-sm bg-green-700 text-white rounded-lg hover:shadow-lg transition-all font-medium"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download PDF
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Booking Modal */}
       {showBookingModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="border-b border-gray-200 p-6 flex justify-between items-center bg-gradient-to-r from-green-50 to-white">
+            <div className="border-b border-gray-200 p-6 flex justify-between items-center bg-green-50">
               <h2 className="text-2xl font-bold text-gray-900">Book New Appointment</h2>
               <button
                 onClick={() => {
@@ -678,9 +1027,7 @@ export default function PatientAppointments() {
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
               <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8">
-                {/* Left Column */}
                 <div className="space-y-6">
-                  {/* Calendar */}
                   <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-6">
                       <button 
@@ -725,7 +1072,7 @@ export default function PatientAppointments() {
                             disabled={!selectedDoctor || isDisabled}
                             className={`
                               aspect-square flex items-center justify-center text-sm font-medium transition-all duration-200 rounded-lg
-                              ${isSelected ? 'bg-gradient-to-br from-green-700 to-green-600 text-white shadow-md scale-105' : ''}
+                              ${isSelected ? 'bg-green-700 text-white shadow-md scale-105' : ''}
                               ${!isSelected && isToday ? 'bg-green-50 text-green-700 border-2 border-green-300' : ''}
                               ${!isSelected && !isToday && !isDisabled ? 'hover:bg-gray-50 text-gray-900 border border-transparent hover:border-green-300' : ''}
                               ${isDisabled ? 'opacity-30 cursor-not-allowed text-gray-400' : ''}
@@ -739,7 +1086,6 @@ export default function PatientAppointments() {
                     </div>
                   </div>
 
-                  {/* Consultation Mode */}
                   <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4 shadow-sm">
                     <h3 className="font-semibold text-gray-900 mb-4">Consultation Mode</h3>
                     
@@ -787,9 +1133,7 @@ export default function PatientAppointments() {
                   </div>
                 </div>
 
-                {/* Right Column */}
                 <div className="space-y-6">
-                  {/* Doctor Selection */}
                   <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">Select Doctor</h2>
                     
@@ -813,7 +1157,7 @@ export default function PatientAppointments() {
                     ) : (
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4">
-                          <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-green-50 border-2 border-green-200 rounded-xl flex items-center justify-center">
+                          <div className="w-16 h-16 bg-green-50 border-2 border-green-200 rounded-xl flex items-center justify-center">
                             <User className="w-8 h-8 text-green-700" />
                           </div>
                           <div>
@@ -839,7 +1183,6 @@ export default function PatientAppointments() {
                     )}
                   </div>
 
-                  {/* Time Slots */}
                   {selectedDoctor && selectedDate && (
                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                       <h3 className="font-semibold text-gray-900 mb-1">
@@ -864,7 +1207,7 @@ export default function PatientAppointments() {
                               className={`
                                 px-4 py-3 text-sm font-medium border-2 transition-all duration-200 rounded-lg
                                 ${selectedSlot === slot 
-                                  ? 'border-green-600 bg-gradient-to-br from-green-700 to-green-600 text-white shadow-md' 
+                                  ? 'border-green-600 bg-green-700 text-white shadow-md' 
                                   : slot.isAvailable
                                   ? 'border-gray-300 text-gray-900 hover:border-green-500 hover:bg-green-50'
                                   : 'border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50'
@@ -879,7 +1222,6 @@ export default function PatientAppointments() {
                     </div>
                   )}
 
-                  {/* Notes */}
                   {selectedSlot && (
                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                       <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -897,12 +1239,11 @@ export default function PatientAppointments() {
                     </div>
                   )}
 
-                  {/* Book Button */}
                   {selectedSlot && (
                     <button
                       onClick={handleBookAppointment}
                       disabled={loading}
-                      className="w-full py-4 bg-gradient-to-r from-green-700 to-green-600 text-white rounded-xl hover:shadow-xl transition-all duration-200 font-semibold text-lg disabled:opacity-50 shadow-md"
+                      className="w-full py-4 bg-green-700 text-white rounded-xl hover:shadow-xl transition-all duration-200 font-semibold text-lg disabled:opacity-50 shadow-md"
                     >
                       {loading ? 'Booking...' : 'Book Appointment'}
                     </button>
@@ -914,11 +1255,10 @@ export default function PatientAppointments() {
         </div>
       )}
 
-      {/* Cancel Modal */}
       {showCancelModal && selectedAppointment && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
-            <div className="border-b border-gray-200 p-6 bg-gradient-to-r from-red-50 to-white">
+            <div className="border-b border-gray-200 p-6 bg-red-50">
               <h2 className="text-xl font-bold text-gray-900">Cancel Appointment</h2>
             </div>
 

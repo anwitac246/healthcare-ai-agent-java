@@ -15,4 +15,6 @@ public class ChatResponse {
     private boolean requiresHumanReview;
     private SafetyCheck safetyCheck;
     private String conversationId;
+    private boolean reportGenerated;
+    private String reportId;
 }

@@ -5,14 +5,15 @@ import com.aethercare.backend.common.response.ApiResponse;
 import com.aethercare.backend.user.model.User;
 import com.aethercare.backend.user.model.UserRole;
 import com.aethercare.backend.user.model.dto.DoctorListDTO;
+import com.aethercare.backend.user.model.dto.UpdateProfileRequest;
 import com.aethercare.backend.user.repository.UserRepository;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,26 @@ public class UserController {
     ) {
         User user = userRepository.findByFirebaseUid(userDetails.getFirebaseUid())
             .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        return ResponseEntity.ok(ApiResponse.success(user));
+    }
+    
+    @PutMapping("/profile")
+    public ResponseEntity<ApiResponse<User>> updateProfile(
+            @Valid @RequestBody UpdateProfileRequest request,
+            @AuthenticationPrincipal FirebaseUserDetails userDetails
+    ) {
+        User user = userRepository.findByFirebaseUid(userDetails.getFirebaseUid())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setPhoneNumber(request.getPhoneNumber());
+        user.setDateOfBirth(request.getDateOfBirth());
+        user.setGender(request.getGender());
+        user.setUpdatedAt(Instant.now());
+        
+        user = userRepository.save(user);
         
         return ResponseEntity.ok(ApiResponse.success(user));
     }
