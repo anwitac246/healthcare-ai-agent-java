@@ -18,7 +18,8 @@ public class MedicalContextAgent implements ChatAgent {
     private static final List<String> SYMPTOM_KEYWORDS = List.of(
         "pain", "fever", "cough", "fatigue", "nausea", "vomiting", 
         "diarrhea", "headache", "rash", "swelling", "bleeding", "dizzy",
-        "shortness of breath", "chest pain", "abdominal pain"
+        "shortness of breath", "chest pain", "abdominal pain", "wbc", 
+        "white blood cell", "elevated", "high count"
     );
     
     @Override
@@ -34,7 +35,25 @@ public class MedicalContextAgent implements ChatAgent {
         List<MedicalEntity> llmSymptoms = extractSymptomsLLM(message);
         List<MedicalEntity> allSymptoms = mergeEntities(ruleBasedSymptoms, llmSymptoms);
         
-        ConversationContext updatedContext = context.withSymptoms(allSymptoms);
+        // CRITICAL: Store symptoms in metadata for persistence
+        Map<String, Object> metadata = new HashMap<>(context.getAgentMetadata());
+        
+        // Convert symptoms to serializable format
+        List<Map<String, Object>> symptomMaps = new ArrayList<>();
+        for (MedicalEntity symptom : allSymptoms) {
+            Map<String, Object> symptomMap = new HashMap<>();
+            symptomMap.put("type", symptom.getType());
+            symptomMap.put("value", symptom.getValue());
+            symptomMap.put("confidence", symptom.getConfidence());
+            symptomMap.put("source", symptom.getSource());
+            symptomMaps.add(symptomMap);
+        }
+        metadata.put("symptoms", symptomMaps);
+        
+        ConversationContext updatedContext = context.toBuilder()
+            .extractedSymptoms(allSymptoms)
+            .agentMetadata(metadata)
+            .build();
         
         return AgentResult.builder()
             .agentName(getAgentName())

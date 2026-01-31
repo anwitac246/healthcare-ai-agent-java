@@ -52,7 +52,16 @@ public class ConversationContextService {
             .build();
     }
     
-    public void saveMessage(ConversationContext context, String role, String content) {
+    /**
+     * UPDATED: Now accepts report information to persist in chat history
+     */
+    public void saveMessage(
+            ConversationContext context, 
+            String role, 
+            String content,
+            Boolean reportGenerated,
+            String reportId
+    ) {
         ChatMessage message = ChatMessage.builder()
             .conversationId(context.getConversationId())
             .userId(context.getUserId())
@@ -62,6 +71,8 @@ public class ConversationContextService {
             .confidence(context.getConfidenceScore())
             .metadata(context.getAgentMetadata())
             .timestamp(Instant.now())
+            .reportGenerated(reportGenerated)
+            .reportId(reportId)
             .createdAt(Instant.now())
             .build();
         
@@ -70,7 +81,8 @@ public class ConversationContextService {
         // Update conversation
         updateConversation(context, content);
         
-        log.debug("Saved message for conversation: {}", context.getConversationId());
+        log.debug("Saved message for conversation: {} (report: {})", 
+                  context.getConversationId(), reportGenerated);
     }
     
     private void updateConversation(ConversationContext context, String lastMessage) {

@@ -29,6 +29,9 @@ public class ChatMessage {
     private Map<String, Object> metadata;
     private Instant timestamp;
     
+    private Boolean reportGenerated;
+    private String reportId;
+    
     @Indexed
     private Instant createdAt;
 }

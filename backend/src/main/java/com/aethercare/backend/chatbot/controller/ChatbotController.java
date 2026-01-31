@@ -60,9 +60,8 @@ public class ChatbotController {
                 responseMessage = "I apologize, but I couldn't generate a proper response. Please try rephrasing your question.";
             }
             
-            // Save messages
-            contextService.saveMessage(finalContext, "user", request.getMessage());
-            contextService.saveMessage(finalContext, "assistant", responseMessage);
+            // Save user message
+            contextService.saveMessage(finalContext, "user", request.getMessage(), null, null);
             
             // Generate report if conditions are met
             MedicalReport generatedReport = null;
@@ -78,6 +77,15 @@ public class ChatbotController {
                     log.error("Failed to generate medical report", e);
                 }
             }
+            
+            // Save assistant message WITH report info
+            contextService.saveMessage(
+                finalContext, 
+                "assistant", 
+                responseMessage,
+                generatedReport != null,
+                generatedReport != null ? generatedReport.getId() : null
+            );
             
             log.info("Generated response for conversation: {} with confidence: {}", 
                     finalContext.getConversationId(), 
@@ -223,58 +231,145 @@ public class ChatbotController {
     }
     
     private List<String> extractMedications(String response) {
-        List<String> medications = new ArrayList<>();
-        
-        // Try to find medications section
-        Pattern sectionPattern = Pattern.compile(
-            "(?:Medication|Treatment|Prescription)s?:(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", 
-            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
-        );
-        Matcher sectionMatcher = sectionPattern.matcher(response);
-        
-        if (sectionMatcher.find()) {
-            String medSection = sectionMatcher.group(1);
+    List<String> medications = new ArrayList<>();
+    
+    log.debug("Extracting medications from response of length: {}", response.length());
+    
+    // PATTERN 1: Extract from bulleted/numbered medication lists
+    // Matches: * Medication, - Medication, 1. Medication, • Medication
+    Pattern bulletPattern = Pattern.compile(
+        "(?:^|\\n)\\s*[*\\-•\\d+\\.)]+\\s*([A-Z][a-zA-Z]+(?:\\s+\\d+\\s*(?:mg|mcg|g|ml|units?))?[^\\n]*?)(?=\\n|$)",
+        Pattern.MULTILINE
+    );
+    Matcher bulletMatcher = bulletPattern.matcher(response);
+    
+    while (bulletMatcher.find()) {
+        String med = bulletMatcher.group(1).trim();
+        // Filter out section headers and non-medication content
+        if (!med.isEmpty() && 
+            !med.toLowerCase().startsWith("medications:") &&
+            !med.toLowerCase().startsWith("treatment:") &&
+            !med.toLowerCase().startsWith("care") &&
+            !med.toLowerCase().startsWith("recommendations:") &&
+            !med.toLowerCase().contains("consult") &&
+            med.length() > 3) {
             
-            // Extract items from lists (numbered or bulleted)
-            Pattern itemPattern = Pattern.compile("(?:[-•\\d+\\.]|\\d+\\))\\s*(.+?)(?:\\n|$)");
-            Matcher itemMatcher = itemPattern.matcher(medSection);
-            
-            while (itemMatcher.find()) {
-                String med = itemMatcher.group(1).trim();
-                if (!med.isEmpty() && !med.startsWith("*")) {
-                    med = med.replaceAll("\\*\\*", "").trim();
-                    medications.add(med);
-                }
+            String cleaned = cleanMedication(med);
+            if (!cleaned.isEmpty() && cleaned.length() > 3) {
+                log.debug("Extracted medication from bullet: {}", cleaned);
+                medications.add(cleaned);
             }
         }
-        
-        // If no medications found, look for common medication patterns
-        if (medications.isEmpty()) {
-            Pattern medPattern = Pattern.compile(
-                "(?:take|prescribe|recommend)\\s+(\\w+(?:\\s+\\d+\\s*(?:mg|mcg|g))?)",
-                Pattern.CASE_INSENSITIVE
-            );
-            Matcher medMatcher = medPattern.matcher(response);
-            
-            while (medMatcher.find() && medications.size() < 5) {
-                medications.add(medMatcher.group(1).trim());
-            }
-        }
-        
-        // Ensure we have at least one recommendation
-        if (medications.isEmpty()) {
-            medications.add("Consult with a healthcare provider for appropriate medication");
-        }
-        
-        return medications;
     }
+    
+    // PATTERN 2: Extract from "Medications:" section more carefully
+    Pattern sectionPattern = Pattern.compile(
+        "Medications?:\\s*\\n(.*?)(?:\\n\\n|\\n[A-Z][a-z]+:|###|$)",
+        Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
+    Matcher sectionMatcher = sectionPattern.matcher(response);
+    
+    if (sectionMatcher.find()) {
+        String medSection = sectionMatcher.group(1);
+        log.debug("Found medication section: {}", medSection.substring(0, Math.min(100, medSection.length())));
+        
+        // Split by newlines and process each line
+        String[] lines = medSection.split("\\n");
+        for (String line : lines) {
+            line = line.trim();
+            // Skip empty lines and lines that don't look like medications
+            if (line.isEmpty() || line.length() < 5) continue;
+            
+            // Remove leading bullets/numbers
+            String cleaned = line.replaceAll("^[*\\-•\\d+\\.)]+\\s*", "");
+            cleaned = cleanMedication(cleaned);
+            
+            if (!cleaned.isEmpty() && 
+                !cleaned.toLowerCase().startsWith("medications") &&
+                !cleaned.toLowerCase().contains("consult") &&
+                cleaned.length() > 3) {
+                
+                log.debug("Extracted medication from section: {}", cleaned);
+                medications.add(cleaned);
+            }
+        }
+    }
+    
+    // PATTERN 3: Extract from parenthetical examples like "(for pain and fever)"
+    // Find medications mentioned with dosages
+    Pattern dosagePattern = Pattern.compile(
+        "([A-Z][a-zA-Z]+)\\s+(\\d+\\s*(?:mg|mcg|g|ml|units?))\\s+([^\\n\\.]{0,50})",
+        Pattern.CASE_INSENSITIVE
+    );
+    Matcher dosageMatcher = dosagePattern.matcher(response);
+    
+    while (dosageMatcher.find() && medications.size() < 10) {
+        String medName = dosageMatcher.group(1);
+        String dosage = dosageMatcher.group(2);
+        String instructions = dosageMatcher.group(3).trim();
+        
+        String fullMed = medName + " " + dosage;
+        if (!instructions.isEmpty() && instructions.length() < 40) {
+            fullMed += " " + instructions;
+        }
+        
+        String cleaned = cleanMedication(fullMed);
+        if (!cleaned.isEmpty()) {
+            log.debug("Extracted medication with dosage: {}", cleaned);
+            medications.add(cleaned);
+        }
+    }
+    
+    // Remove duplicates (case-insensitive)
+    List<String> uniqueMeds = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    
+    for (String med : medications) {
+        String normalized = med.toLowerCase().split("\\s+")[0]; // First word (drug name)
+        if (!seen.contains(normalized)) {
+            seen.add(normalized);
+            uniqueMeds.add(med);
+        }
+    }
+    
+    log.info("Extracted {} unique medications", uniqueMeds.size());
+    
+    // Fallback if nothing found
+    if (uniqueMeds.isEmpty()) {
+        log.warn("No medications extracted, using fallback");
+        uniqueMeds.add("Consult with a healthcare provider for appropriate medication prescription");
+    }
+    
+    return uniqueMeds;
+}
+
+private String cleanMedication(String medication) {
+    if (medication == null) return "";
+    
+    // Remove markdown formatting
+    String cleaned = medication
+        .replaceAll("\\*\\*", "")
+        .replaceAll("\\*", "")
+        .replaceAll("#", "")
+        .replaceAll("^[\\d\\.\\-]+\\s*", "") // Remove leading numbers/bullets
+        .trim();
+    
+    // Remove common non-medication prefixes
+    cleaned = cleaned.replaceAll("(?i)^(medications?:|treatment:|prescribed?:)\\s*", "");
+    
+    // Remove trailing periods if present
+    cleaned = cleaned.replaceAll("\\.$", "");
+    
+    return cleaned.trim();
+}
+   
     
     private List<String> extractCareInstructions(String response) {
         List<String> instructions = new ArrayList<>();
         
         // Try to find care/recommendations section
         Pattern sectionPattern = Pattern.compile(
-            "(?:Recommendations?|Care|Instructions?|Next Steps):\\s*(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", 
+            "(?:Recommendations?|Care|Instructions?|Next Steps):\\s*(.+?)(?:\\n\\n|\\*\\*[A-Z]|###|$)", 
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE
         );
         Matcher sectionMatcher = sectionPattern.matcher(response);
@@ -288,7 +383,7 @@ public class ChatbotController {
             
             while (itemMatcher.find()) {
                 String instruction = itemMatcher.group(1).trim();
-                if (!instruction.isEmpty() && !instruction.startsWith("*")) {
+                if (!instruction.isEmpty() && !instruction.startsWith("*") && !instruction.startsWith("#")) {
                     instruction = instruction.replaceAll("\\*\\*", "").trim();
                     instructions.add(instruction);
                 }
@@ -364,8 +459,8 @@ public class ChatbotController {
             String uploadNotification = String.format("Uploaded document: %s (%s)", 
                     parseResult.getFileName(), 
                     parseResult.getFileType());
-            contextService.saveMessage(finalContext, "user", uploadNotification);
-            contextService.saveMessage(finalContext, "assistant", analysis);
+            contextService.saveMessage(finalContext, "user", uploadNotification, null, null);
+            contextService.saveMessage(finalContext, "assistant", analysis, null, null);
             
             log.info("Document analysis completed for conversation: {}", finalContext.getConversationId());
             
