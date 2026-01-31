@@ -8,11 +8,7 @@ import java.util.stream.Collectors;
 /**
  * Builds PubMed-compatible search queries from medical symptoms.
  * 
- * Strategy:
- * - Combines symptoms with medical MeSH terms where possible
- * - Uses boolean operators (AND, OR) for complex queries
- * - Sanitizes input to prevent injection
- * - Adds filters for article types (Clinical Trial, Review, etc.)
+ * FIXED: Removed overly restrictive filters that were blocking results
  */
 @Component
 public class PubMedQueryBuilder {
@@ -24,6 +20,7 @@ public class PubMedQueryBuilder {
     
     /**
      * Build PubMed query from free-text symptoms
+     * FIXED: Simple query without overly restrictive filters
      */
     public String buildQuery(String symptoms) {
         if (symptoms == null || symptoms.trim().isEmpty()) {
@@ -39,8 +36,13 @@ public class PubMedQueryBuilder {
             .filter(token -> !STOP_WORDS.contains(token.toLowerCase()))
             .collect(Collectors.toList());
         
-        // Build query with medical context
-        return buildMedicalQuery(meaningfulTokens);
+        if (meaningfulTokens.isEmpty()) {
+            return "";
+        }
+        
+        // Simple query - just join symptoms
+        // Don't add restrictive filters that block results
+        return String.join(" ", meaningfulTokens);
     }
     
     /**
@@ -56,7 +58,12 @@ public class PubMedQueryBuilder {
             .filter(s -> !s.isEmpty())
             .collect(Collectors.toList());
         
-        return buildMedicalQuery(cleanedSymptoms);
+        if (cleanedSymptoms.isEmpty()) {
+            return "";
+        }
+        
+        // Simple query - just join symptoms
+        return String.join(" ", cleanedSymptoms);
     }
     
     /**
@@ -70,6 +77,7 @@ public class PubMedQueryBuilder {
         int currentYear = java.time.Year.now().getValue();
         int startYear = currentYear - yearsSince;
         
+        // Add date filter
         return query + " AND " + startYear + ":" + currentYear + "[pdat]";
     }
     
@@ -101,36 +109,11 @@ public class PubMedQueryBuilder {
     }
     
     /**
-     * Build medical query with proper boolean operators
-     * 
-     * Strategy:
-     * - Join symptoms with AND (all symptoms must be present)
-     * - Add [MeSH] tags for medical terms where appropriate
-     * - Prioritize clinical and review articles
-     */
-    private String buildMedicalQuery(List<String> terms) {
-        if (terms.isEmpty()) {
-            return "";
-        }
-        
-        // Join terms with AND
-        String baseQuery = String.join(" AND ", terms);
-        
-        // Add filters for medical relevance
-        String filters = "(clinical[sb] OR review[pt] OR clinical trial[pt])";
-        
-        return "(" + baseQuery + ") AND " + filters;
-    }
-    
-    /**
-     * Add medical context to query
+     * DEPRECATED: This method was adding overly restrictive filters
+     * Add medical context to query - ONLY use if specifically requested
      */
     public String addMedicalContext(String query) {
-        if (query == null || query.isEmpty()) {
-            return query;
-        }
-        
-        // Add medical field tags
-        return query + " AND (diagnosis[sb] OR etiology[sb] OR therapy[sb])";
+        // Don't add restrictive filters by default
+        return query;
     }
 }
