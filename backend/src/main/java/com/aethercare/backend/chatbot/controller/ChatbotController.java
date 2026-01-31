@@ -60,15 +60,20 @@ public class ChatbotController {
                 responseMessage = "I apologize, but I couldn't generate a proper response. Please try rephrasing your question.";
             }
             
+            // Save messages
             contextService.saveMessage(finalContext, "user", request.getMessage());
             contextService.saveMessage(finalContext, "assistant", responseMessage);
             
+            // Generate report if conditions are met
             MedicalReport generatedReport = null;
             if (shouldGenerateReport(finalContext)) {
                 try {
                     generatedReport = generateMedicalReport(finalContext, userDetails.getFirebaseUid());
                     log.info("Medical report generated successfully for conversation: {}", 
                             finalContext.getConversationId());
+                    
+                    // Append download link to response
+                    responseMessage = appendReportDownloadLink(responseMessage, generatedReport.getId());
                 } catch (Exception e) {
                     log.error("Failed to generate medical report", e);
                 }
@@ -107,27 +112,55 @@ public class ChatbotController {
         }
     }
     
+    private String appendReportDownloadLink(String originalMessage, String reportId) {
+        StringBuilder enhanced = new StringBuilder(originalMessage);
+        enhanced.append("\n\n---\n\n");
+        enhanced.append("### 📄 Medical Report Generated\n\n");
+        enhanced.append("A detailed medical report has been generated based on this consultation.\n\n");
+        enhanced.append("**Report ID:** ").append(reportId).append("\n\n");
+        enhanced.append("You can view and download this report from:\n");
+        enhanced.append("- The **Reports** section in your patient dashboard\n");
+        enhanced.append("- Use Report ID: `").append(reportId).append("`\n\n");
+        enhanced.append("*This report includes diagnosis, symptoms, recommended medications, and care instructions.*");
+        
+        return enhanced.toString();
+    }
+    
     private boolean shouldGenerateReport(ConversationContext context) {
-        if (context.getConfidenceScore() == null) {
+        // Must have confidence score
+        if (context.getConfidenceScore() == null || context.getConfidenceScore() < 70.0) {
+            log.debug("Report not generated: confidence too low ({})", context.getConfidenceScore());
             return false;
         }
         
-        if (context.getConfidenceScore() < 70.0) {
-            return false;
-        }
-        
+        // Must not be emergency
         if (context.getSafetyCheck() != null && context.getSafetyCheck().isEmergency()) {
+            log.debug("Report not generated: emergency situation detected");
             return false;
         }
         
+        // Must have symptoms
         if (context.getExtractedSymptoms() == null || context.getExtractedSymptoms().isEmpty()) {
+            log.debug("Report not generated: no symptoms extracted");
             return false;
         }
         
+        // Must have diagnosis
         if (context.getDiagnosisSummary() == null || context.getDiagnosisSummary().isEmpty()) {
+            log.debug("Report not generated: no diagnosis available");
             return false;
         }
         
+        // Check if diagnosis contains actual medical content (not just error messages)
+        String diagnosis = context.getDiagnosisSummary().toLowerCase();
+        if (diagnosis.contains("i apologize") || diagnosis.contains("error") || 
+            diagnosis.contains("couldn't generate") || diagnosis.length() < 100) {
+            log.debug("Report not generated: diagnosis appears to be error message");
+            return false;
+        }
+        
+        log.info("Report generation criteria met - confidence: {}, symptoms: {}", 
+                context.getConfidenceScore(), context.getExtractedSymptoms().size());
         return true;
     }
     
@@ -141,6 +174,9 @@ public class ChatbotController {
         List<String> medications = extractMedications(context.getDiagnosisSummary());
         List<String> careInstructions = extractCareInstructions(context.getDiagnosisSummary());
         
+        log.info("Generating report with diagnosis: {}, {} symptoms, {} medications", 
+                diagnosis, symptoms.size(), medications.size());
+        
         return reportService.createReport(
             userId,
             context.getConversationId(),
@@ -153,19 +189,32 @@ public class ChatbotController {
     }
     
     private String extractDiagnosis(String response) {
-        Pattern pattern = Pattern.compile("(?:Possible Conditions?|Diagnosis):\\s*(.+?)(?:\\n\\n|\\*\\*|$)", Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(response);
+        // Try multiple patterns to extract diagnosis
+        Pattern[] patterns = {
+            Pattern.compile("(?:Possible Conditions?|Diagnosis):\\s*\\*\\*(.+?)\\*\\*", Pattern.DOTALL),
+            Pattern.compile("(?:Possible Conditions?|Diagnosis):\\s*(.+?)(?:\\n\\n|\\*\\*)", Pattern.DOTALL),
+            Pattern.compile("(?:Possible Conditions?):\\s*[\\d\\.\\-]?\\s*(.+?)(?:\\n|$)")
+        };
         
-        if (matcher.find()) {
-            String diagnosis = matcher.group(1).trim();
-            diagnosis = diagnosis.replaceAll("\\*\\*", "").trim();
-            diagnosis = diagnosis.split("\\n")[0].trim();
-            return diagnosis;
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(response);
+            if (matcher.find()) {
+                String diagnosis = matcher.group(1).trim();
+                diagnosis = diagnosis.replaceAll("\\*\\*", "").trim();
+                // Get first line if multiple
+                diagnosis = diagnosis.split("\\n")[0].trim();
+                if (!diagnosis.isEmpty() && diagnosis.length() > 5) {
+                    return diagnosis;
+                }
+            }
         }
         
+        // Fallback: look for first substantial sentence about a condition
         String[] lines = response.split("\\n");
         for (String line : lines) {
-            if (line.contains("diagnosis") || line.contains("condition")) {
+            if ((line.contains("condition") || line.contains("diagnosis") || 
+                 line.contains("likely") || line.contains("suggest")) && 
+                line.length() > 20 && !line.startsWith("#")) {
                 return line.replaceAll("\\*\\*", "").trim();
             }
         }
@@ -176,22 +225,43 @@ public class ChatbotController {
     private List<String> extractMedications(String response) {
         List<String> medications = new ArrayList<>();
         
-        Pattern sectionPattern = Pattern.compile("(?:Medication|Treatment|Prescription)s?:(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", Pattern.DOTALL);
+        // Try to find medications section
+        Pattern sectionPattern = Pattern.compile(
+            "(?:Medication|Treatment|Prescription)s?:(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", 
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+        );
         Matcher sectionMatcher = sectionPattern.matcher(response);
         
         if (sectionMatcher.find()) {
             String medSection = sectionMatcher.group(1);
-            Pattern itemPattern = Pattern.compile("[-•]\\s*(.+?)(?:\\n|$)");
+            
+            // Extract items from lists (numbered or bulleted)
+            Pattern itemPattern = Pattern.compile("(?:[-•\\d+\\.]|\\d+\\))\\s*(.+?)(?:\\n|$)");
             Matcher itemMatcher = itemPattern.matcher(medSection);
             
             while (itemMatcher.find()) {
                 String med = itemMatcher.group(1).trim();
-                if (!med.isEmpty()) {
-                    medications.add(med.replaceAll("\\*\\*", ""));
+                if (!med.isEmpty() && !med.startsWith("*")) {
+                    med = med.replaceAll("\\*\\*", "").trim();
+                    medications.add(med);
                 }
             }
         }
         
+        // If no medications found, look for common medication patterns
+        if (medications.isEmpty()) {
+            Pattern medPattern = Pattern.compile(
+                "(?:take|prescribe|recommend)\\s+(\\w+(?:\\s+\\d+\\s*(?:mg|mcg|g))?)",
+                Pattern.CASE_INSENSITIVE
+            );
+            Matcher medMatcher = medPattern.matcher(response);
+            
+            while (medMatcher.find() && medications.size() < 5) {
+                medications.add(medMatcher.group(1).trim());
+            }
+        }
+        
+        // Ensure we have at least one recommendation
         if (medications.isEmpty()) {
             medications.add("Consult with a healthcare provider for appropriate medication");
         }
@@ -202,26 +272,35 @@ public class ChatbotController {
     private List<String> extractCareInstructions(String response) {
         List<String> instructions = new ArrayList<>();
         
-        Pattern sectionPattern = Pattern.compile("(?:Recommendations?|Care|Instructions?):\\s*(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", Pattern.DOTALL);
+        // Try to find care/recommendations section
+        Pattern sectionPattern = Pattern.compile(
+            "(?:Recommendations?|Care|Instructions?|Next Steps):\\s*(.+?)(?:\\n\\n|\\*\\*[A-Z]|$)", 
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+        );
         Matcher sectionMatcher = sectionPattern.matcher(response);
         
         if (sectionMatcher.find()) {
             String careSection = sectionMatcher.group(1);
-            Pattern itemPattern = Pattern.compile("[-•]\\s*(.+?)(?:\\n|$)");
+            
+            // Extract items from lists
+            Pattern itemPattern = Pattern.compile("(?:[-•\\d+\\.]|\\d+\\))\\s*(.+?)(?:\\n|$)");
             Matcher itemMatcher = itemPattern.matcher(careSection);
             
             while (itemMatcher.find()) {
                 String instruction = itemMatcher.group(1).trim();
-                if (!instruction.isEmpty()) {
-                    instructions.add(instruction.replaceAll("\\*\\*", ""));
+                if (!instruction.isEmpty() && !instruction.startsWith("*")) {
+                    instruction = instruction.replaceAll("\\*\\*", "").trim();
+                    instructions.add(instruction);
                 }
             }
         }
         
+        // Default instructions if none found
         if (instructions.isEmpty()) {
             instructions.add("Monitor symptoms and seek medical attention if condition worsens");
             instructions.add("Maintain adequate rest and hydration");
             instructions.add("Follow up with healthcare provider for comprehensive evaluation");
+            instructions.add("Keep track of symptom progression and any new symptoms");
         }
         
         return instructions;

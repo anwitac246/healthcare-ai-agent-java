@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Mic, Plus, MessageSquare, LogOut } from 'lucide-react';
+import { Send, Paperclip, Mic, Plus, MessageSquare, LogOut, FileText, Download } from 'lucide-react';
 import Navbar from "../components/navbar";
 import { MarkdownMessage } from '../components/MarkdownMessage';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,8 @@ interface Message {
   content: string;
   timestamp: Date;
   confidence?: number;
+  reportGenerated?: boolean;
+  reportId?: string;
   documentInfo?: {
     fileName: string;
     fileType: string;
@@ -68,7 +70,6 @@ export default function DiagnosisBot() {
         return;
       }
 
-      // Verify token is still valid by making a test request
       const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -76,7 +77,6 @@ export default function DiagnosisBot() {
       });
 
       if (!response.ok) {
-        // Token expired or invalid
         localStorage.removeItem('authToken');
         localStorage.removeItem('userData');
         router.push('/patient_login');
@@ -113,6 +113,35 @@ export default function DiagnosisBot() {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleDownloadReport = async (reportId: string) => {
+    if (!authToken) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}/download`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `medical-report-${reportId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        alert('Failed to download report. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to download report:', error);
+      alert('Failed to download report. Please try again.');
+    }
   };
 
   const handleSend = async () => {
@@ -155,9 +184,6 @@ export default function DiagnosisBot() {
       }
 
       const data = await response.json();
-      
-      console.log('API Response:', data);
-      
       const botResponse = data.data;
 
       if (!botResponse || !botResponse.message) {
@@ -170,16 +196,16 @@ export default function DiagnosisBot() {
         content: botResponse.message,
         timestamp: new Date(),
         confidence: botResponse.confidence,
+        reportGenerated: botResponse.reportGenerated,
+        reportId: botResponse.reportId,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Set conversation ID if this was first message
       if (botResponse.conversationId && !conversationId) {
         setConversationId(botResponse.conversationId);
       }
 
-      // Reload conversations to update sidebar
       loadConversations();
 
     } catch (err) {
@@ -225,7 +251,7 @@ export default function DiagnosisBot() {
             content: msg.content,
             timestamp: new Date(msg.timestamp),
             confidence: msg.confidence
-          })).reverse(); // Reverse to show chronological order
+          })).reverse();
           
           setMessages(loadedMessages);
           setConversationId(chatId);
@@ -506,18 +532,22 @@ export default function DiagnosisBot() {
                   <h2 className="text-2xl font-semibold text-green-900 mb-2">
                     AI Medical Assistant
                   </h2>
-                  <p className="text-green-700/70">
+                  <p className="text-green-700/70 mb-6">
                     I'm your AI medical assistant powered by peer-reviewed PubMed research.
                     Describe your symptoms or upload medical documents for evidence-based analysis.
                   </p>
-                  <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-                    <div className="bg-green-50 p-3 rounded-lg border border-green-800/10">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-800/10">
                       <p className="font-medium text-green-900 mb-1">Evidence-Based</p>
                       <p className="text-green-700/70 text-xs">All responses backed by medical research</p>
                     </div>
-                    <div className="bg-green-50 p-3 rounded-lg border border-green-800/10">
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-800/10">
                       <p className="font-medium text-green-900 mb-1">Document Analysis</p>
                       <p className="text-green-700/70 text-xs">Upload lab results, reports, or images</p>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-800/10">
+                      <p className="font-medium text-green-900 mb-1">PDF Reports</p>
+                      <p className="text-green-700/70 text-xs">Get downloadable medical reports</p>
                     </div>
                   </div>
                 </div>
@@ -532,7 +562,7 @@ export default function DiagnosisBot() {
                     }`}
                   >
                     <div
-                      className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                         message.role === 'user'
                           ? 'bg-green-800 text-white'
                           : message.role === 'system'
@@ -543,9 +573,7 @@ export default function DiagnosisBot() {
                       {message.documentInfo && (
                         <div className="mb-2 pb-2 border-b border-green-800/20">
                           <div className="flex items-center gap-2">
-                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
+                            <FileText className="w-5 h-5 text-green-600" />
                             <span className="text-sm font-medium">
                               {message.documentInfo.fileName}
                             </span>
@@ -557,6 +585,18 @@ export default function DiagnosisBot() {
                         content={message.content}
                         isUser={message.role === 'user'}
                       />
+
+                      {message.reportGenerated && message.reportId && (
+                        <div className="mt-3 pt-3 border-t border-green-800/20">
+                          <button
+                            onClick={() => handleDownloadReport(message.reportId!)}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-all text-sm font-medium"
+                          >
+                            <Download size={16} />
+                            Download Medical Report
+                          </button>
+                        </div>
+                      )}
 
                       {message.confidence !== undefined && message.confidence > 0 && (
                         <p className="text-xs mt-2 opacity-70">
@@ -613,7 +653,7 @@ export default function DiagnosisBot() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder="Describe your symptoms..."
+                    placeholder="Describe your symptoms in detail..."
                     className="w-full px-5 py-2.5 border border-green-800/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700 focus:border-transparent resize-none text-green-900 placeholder-green-700/50"
                     rows={1}
                     disabled={isLoading || uploadingFile}

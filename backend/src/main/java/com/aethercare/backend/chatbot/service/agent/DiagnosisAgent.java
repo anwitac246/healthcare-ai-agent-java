@@ -4,6 +4,7 @@ import com.aethercare.backend.chatbot.model.dto.*;
 import com.aethercare.backend.chatbot.integration.groq.GroqService;
 import com.aethercare.backend.chatbot.integration.pubmed.PubMedService;
 import com.aethercare.backend.chatbot.integration.pubmed.dto.PubMedSearchResponse;
+import com.aethercare.backend.chatbot.integration.pubmed.dto.PubMedArticle;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -82,17 +83,104 @@ public class DiagnosisAgent implements ChatAgent {
             return handleGeneralQuestion(context);
         }
         
-        // Query PubMed for research
+        // Query PubMed for research with better parameters
         String symptomText = context.getExtractedSymptoms().stream()
             .map(MedicalEntity::getValue)
-            .collect(Collectors.joining(", "));
+            .collect(Collectors.joining(" "));
         
         log.info("Querying PubMed for symptoms: {}", symptomText);
-        PubMedSearchResponse pubmedResponse = pubMedService.searchBySymptoms(symptomText, 5, 10);
-        String researchSummary = pubMedService.buildResearchSummary(pubmedResponse);
+        
+        // Search with more results and recent articles (last 5 years)
+        PubMedSearchResponse pubmedResponse = pubMedService.searchBySymptoms(symptomText, 10, 5);
+        
+        if (pubmedResponse == null || !pubmedResponse.isSuccess() || 
+            pubmedResponse.getArticles() == null || pubmedResponse.getArticles().isEmpty()) {
+            log.warn("No PubMed research found, using general medical knowledge");
+            // Still provide diagnosis but note limited evidence
+            String prompt = buildSymptomPromptWithoutResearch(context);
+            return groqService.complete(prompt);
+        }
+        
+        String researchSummary = buildDetailedResearchSummary(pubmedResponse);
+        log.info("Found {} PubMed articles for diagnosis", pubmedResponse.getArticles().size());
         
         String prompt = buildSymptomPrompt(context, researchSummary);
         return groqService.complete(prompt);
+    }
+    
+    private String buildDetailedResearchSummary(PubMedSearchResponse response) {
+        if (!response.isSuccess() || response.getArticles().isEmpty()) {
+            return "No relevant medical research found for the provided symptoms.";
+        }
+        
+        StringBuilder summary = new StringBuilder();
+        summary.append("**Recent Medical Research Findings:**\n\n");
+        
+        // Include top 5 most relevant articles
+        int count = Math.min(5, response.getArticles().size());
+        for (int i = 0; i < count; i++) {
+            PubMedArticle article = response.getArticles().get(i);
+            
+            summary.append(String.format("**Study %d** (PMID: %s):\n", i + 1, article.getPmid()));
+            summary.append("Title: ").append(article.getTitle()).append("\n");
+            
+            if (article.getJournal() != null && article.getPublicationYear() != null) {
+                summary.append(String.format("Published in: %s (%d)\n", 
+                    article.getJournal(), article.getPublicationYear()));
+            }
+            
+            if (article.getAuthors() != null) {
+                summary.append("Authors: ").append(article.getAuthors()).append("\n");
+            }
+            
+            if (article.getAbstractText() != null) {
+                String truncatedAbstract = article.getAbstractText().length() > 300
+                        ? article.getAbstractText().substring(0, 300) + "..."
+                        : article.getAbstractText();
+                summary.append("Abstract: ").append(truncatedAbstract).append("\n");
+            }
+            
+            summary.append("\n");
+        }
+        
+        return summary.toString();
+    }
+    
+    private String buildSymptomPromptWithoutResearch(ConversationContext context) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("You are a medical AI assistant. Provide an evidence-based analysis.\n\n");
+        
+        // Add symptoms
+        prompt.append("**Reported Symptoms:**\n");
+        context.getExtractedSymptoms().forEach(s -> 
+            prompt.append("- ").append(s.getValue()).append("\n"));
+        prompt.append("\n");
+        
+        // Add document analysis if available
+        if (context.getDocumentAnalysis() != null && !context.getDocumentAnalysis().isEmpty()) {
+            prompt.append("**Medical Document Analysis:**\n");
+            prompt.append(context.getDocumentAnalysis()).append("\n\n");
+        }
+        
+        prompt.append("""
+            **Instructions:**
+            Note: Limited recent research was found for these specific symptoms.
+            Based on general medical knowledge, provide:
+            
+            1. **Possible Conditions**: List 2-3 potential diagnoses
+            2. **Common Treatment Approaches**: General evidence-based treatments
+            3. **Medications**: Suggest common medications that doctors typically prescribe for these conditions
+            4. **Severity**: Indicate urgency level (routine, urgent, or emergency)
+            5. **Recommendations**: Specific next steps including consulting a healthcare provider
+            6. **Confidence**: Provide percentage (format: "Confidence: XX%")
+            
+            **IMPORTANT**: Include specific medication recommendations with dosage information.
+            
+            Format in clean markdown without emojis.
+            Keep under 500 words.
+            """);
+        
+        return prompt.toString();
     }
     
     private String handleFollowUpOrDocumentQuestion(ConversationContext context) {
@@ -171,7 +259,7 @@ public class DiagnosisAgent implements ChatAgent {
     
     private String handleEmergency(ConversationContext context) {
         return """
-            # EMERGENCY SITUATION DETECTED
+            # ⚠️ EMERGENCY SITUATION DETECTED
             
             **IMMEDIATE ACTION REQUIRED**
             
@@ -194,7 +282,7 @@ public class DiagnosisAgent implements ChatAgent {
     
     private String buildSymptomPrompt(ConversationContext context, String researchSummary) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are a medical AI assistant. Provide an evidence-based analysis.\n\n");
+        prompt.append("You are a medical AI assistant. Provide an evidence-based analysis using the research provided.\n\n");
         
         // Add chat history context
         if (context.getMessageHistory() != null && !context.getMessageHistory().isEmpty()) {
@@ -222,23 +310,26 @@ public class DiagnosisAgent implements ChatAgent {
         }
         
         // Add PubMed research
-        prompt.append("**Relevant Medical Research from PubMed:**\n");
         prompt.append(researchSummary).append("\n\n");
         
         prompt.append("""
             **Instructions:**
-            Based on the above information, provide:
+            Based on the research studies provided above, provide:
             
-            1. **Possible Conditions**: List 2-3 potential diagnoses based on symptoms
-            2. **Evidence**: Cite the research studies provided (reference PMID numbers)
-            3. **Analysis**: If lab results provided, analyze values and explain abnormalities
-            4. **Severity**: Indicate urgency level (routine, urgent, or emergency)
-            5. **Recommendations**: Specific next steps
-            6. **Confidence**: Provide percentage (format: "Confidence: XX%")
+            1. **Possible Conditions**: List 2-3 potential diagnoses based on symptoms and research
+            2. **Evidence**: Cite the specific research studies by PMID number
+            3. **Medications**: Recommend specific medications based on research findings with typical dosages
+            4. **Analysis**: If lab results provided, analyze values and explain abnormalities
+            5. **Severity**: Indicate urgency level (routine, urgent, or emergency)
+            6. **Recommendations**: Specific next steps based on evidence
+            7. **Confidence**: Provide percentage (format: "Confidence: XX%")
+            
+            **CRITICAL**: You MUST cite the research by PMID numbers when making recommendations.
+            **IMPORTANT**: Include specific medication recommendations with dosage information.
             
             Format in clean markdown without emojis.
-            Keep under 500 words.
-            Be evidence-based and cite research.
+            Keep under 600 words.
+            Be evidence-based and cite research studies properly.
             """);
         
         return prompt.toString();
@@ -255,7 +346,7 @@ public class DiagnosisAgent implements ChatAgent {
                 log.warn("Failed to parse confidence value");
             }
         }
-        return 70.0;
+        return 70.0; // Default confidence
     }
     
     @Override
