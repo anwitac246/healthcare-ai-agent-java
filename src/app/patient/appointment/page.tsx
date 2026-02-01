@@ -691,7 +691,7 @@ export default function PatientAppointments() {
                             type="text"
                             value={editedProfile?.firstName || ''}
                             onChange={(e) => setEditedProfile(prev => prev ? {...prev, firstName: e.target.value} : null)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full text-green-950 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           />
                         ) : (
                           <p className="text-gray-900 font-medium py-3">{profileData?.firstName}</p>
@@ -704,7 +704,7 @@ export default function PatientAppointments() {
                             type="text"
                             value={editedProfile?.lastName || ''}
                             onChange={(e) => setEditedProfile(prev => prev ? {...prev, lastName: e.target.value} : null)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full text-green-950 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           />
                         ) : (
                           <p className="text-gray-900 font-medium py-3">{profileData?.lastName}</p>
@@ -721,7 +721,7 @@ export default function PatientAppointments() {
                             type="tel"
                             value={editedProfile?.phoneNumber || ''}
                             onChange={(e) => setEditedProfile(prev => prev ? {...prev, phoneNumber: e.target.value} : null)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full px-4 text-green-950 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           />
                         ) : (
                           <p className="text-gray-900 font-medium py-3">{profileData?.phoneNumber}</p>
@@ -734,7 +734,7 @@ export default function PatientAppointments() {
                             type="date"
                             value={editedProfile?.dateOfBirth || ''}
                             onChange={(e) => setEditedProfile(prev => prev ? {...prev, dateOfBirth: e.target.value} : null)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full text-green-950 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           />
                         ) : (
                           <p className="text-gray-900 font-medium py-3">{profileData?.dateOfBirth}</p>
@@ -746,7 +746,7 @@ export default function PatientAppointments() {
                           <select
                             value={editedProfile?.gender || ''}
                             onChange={(e) => setEditedProfile(prev => prev ? {...prev, gender: e.target.value} : null)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full text-green-950 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                           >
                             <option value="male">Male</option>
                             <option value="female">Female</option>
@@ -808,7 +808,7 @@ export default function PatientAppointments() {
                       placeholder="Search appointments..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm"
+                      className="w-full text-green-950 pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm"
                     />
                   </div>
                 </div>

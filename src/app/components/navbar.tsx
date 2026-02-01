@@ -24,8 +24,8 @@ const Navbar = () => {
     router.push('/');
   };
 
-  const dashboardLink = userType === 'doctor' ? '/doctor/dashboard' : '/patient/dashboard';
-  const appointmentLink = userType === 'doctor' ? '/doctor/appointments' : '/patient/appointments';
+  const dashboardLink = userType === 'doctor' ? '/doctor/appointment' : '/patient/appointment';
+  const appointmentLink = userType === 'doctor' ? '/doctor/appointment' : '/patient/appointment';
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-200 shadow-sm">
