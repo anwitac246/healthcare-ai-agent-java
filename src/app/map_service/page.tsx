@@ -28,6 +28,10 @@ export default function MapPage() {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   
+  // Authentication state
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [radius, setRadius] = useState(5000);
@@ -38,15 +42,54 @@ export default function MapPage() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
 
+  // Check authentication first
   useEffect(() => {
-    loadLeaflet();
+    checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (authToken) {
+      loadLeaflet();
+    }
+  }, [authToken]);
 
   useEffect(() => {
     if (mapLoaded && userLocation) {
       initMap();
     }
   }, [mapLoaded, userLocation]);
+
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userDataStr = localStorage.getItem('userData');
+      
+      if (!token || !userDataStr) {
+        router.push('/login');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        router.push('/login');
+        return;
+      }
+
+      setAuthToken(token);
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      router.push('/login');
+    } finally {
+      setIsAuthChecking(false);
+    }
+  };
 
   const loadLeaflet = () => {
     if (typeof window !== 'undefined') {
@@ -122,6 +165,11 @@ export default function MapPage() {
       return;
     }
 
+    if (!authToken) {
+      router.push('/login');
+      return;
+    }
+
     setLoading(true);
     setSelectedPlace(null);
 
@@ -131,7 +179,12 @@ export default function MapPage() {
 
       if (searchQuery.trim()) {
         const geocodeResponse = await fetch(
-          `${API_BASE_URL}/api/map/geocode?query=${encodeURIComponent(searchQuery)}`
+          `${API_BASE_URL}/api/map/geocode?query=${encodeURIComponent(searchQuery)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          }
         );
         
         if (geocodeResponse.ok) {
@@ -150,13 +203,22 @@ export default function MapPage() {
 
       const typeParam = selectedType !== 'all' ? `&type=${selectedType}` : '';
       const nearbyResponse = await fetch(
-        `${API_BASE_URL}/api/map/nearby?lat=${lat}&lon=${lon}&radius=${radius}${typeParam}`
+        `${API_BASE_URL}/api/map/nearby?lat=${lat}&lon=${lon}&radius=${radius}${typeParam}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        }
       );
 
       if (nearbyResponse.ok) {
         const nearbyData = await nearbyResponse.json();
         setPlaces(nearbyData.data?.places || []);
         displayMarkers(nearbyData.data?.places || []);
+      } else if (nearbyResponse.status === 401 || nearbyResponse.status === 403) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        router.push('/login');
       }
     } catch (error) {
       console.error('Search failed:', error);
@@ -230,11 +292,32 @@ export default function MapPage() {
     }
   };
 
+  const getDirectionsUrl = () => {
+    if (!selectedPlace || !userLocation) return '#';
+    const fromLat = userLocation.latitude;
+    const fromLon = userLocation.longitude;
+    const toLat = selectedPlace.location.latitude;
+    const toLon = selectedPlace.location.longitude;
+    return `https://www.openstreetmap.org/directions?from=${fromLat},${fromLon}&to=${toLat},${toLon}`;
+  };
+
+  if (isAuthChecking) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800 mx-auto"></div>
+          <p className="text-green-800 mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-white">
       <Navbar />
       
       <div className="flex-1 flex overflow-hidden mt-16">
+        {/* Sidebar */}
         <div className={`${showSidebar ? 'w-96' : 'w-0'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 overflow-hidden`}>
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Find Healthcare</h2>
@@ -314,7 +397,7 @@ export default function MapPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-gray-900 truncate">{place.name}</h3>
                         <p className="text-sm text-gray-600 capitalize">{place.type.replace('_', ' ')}</p>
-                        <p className="text-xs text-gray-500 mt-1">{place.address}</p>
+                        <p className="text-xs text-gray-500 truncate mt-1">{place.address}</p>
                         <p className="text-xs font-medium text-green-700 mt-1">{formatDistance(place.distance)}</p>
                       </div>
                     </div>
@@ -325,10 +408,11 @@ export default function MapPage() {
           </div>
         </div>
 
+        {/* Main Map Area */}
         <div className="flex-1 relative">
           <button
             onClick={() => setShowSidebar(!showSidebar)}
-            className="absolute top-4 left-4 z-[1000] bg-white p-2 rounded-lg shadow-md hover:bg-gray-50 transition-colors border border-gray-200"
+            className="absolute top-4 left-4 z-1000 bg-white p-2 rounded-lg shadow-md hover:bg-gray-50 transition-colors border border-gray-200"
           >
             <Menu className="w-5 h-5 text-gray-700" />
           </button>
@@ -336,7 +420,7 @@ export default function MapPage() {
           <div id="map" className="w-full h-full"></div>
 
           {selectedPlace && (
-            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg border border-gray-200 w-96 max-w-[90%] z-[1000]">
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg border border-gray-200 w-96 z-1000" style={{ maxWidth: '90%' }}>
               <div className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-start gap-3 flex-1">
@@ -393,7 +477,7 @@ export default function MapPage() {
 
                 <div className="mt-4 pt-3 border-t border-gray-200">
                   <a
-                    href={`https://www.openstreetmap.org/directions?from=${userLocation?.latitude},${userLocation?.longitude}&to=${selectedPlace.location.latitude},${selectedPlace.location.longitude}`}
+                    href={getDirectionsUrl()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-center bg-green-700 text-white py-2 rounded-lg hover:bg-green-800 transition-colors font-medium"
