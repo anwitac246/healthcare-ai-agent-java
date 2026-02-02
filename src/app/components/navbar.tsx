@@ -60,6 +60,11 @@ const Navbar = () => {
                     Book Appointment
                   </div>
                 </Link>
+                <Link href="/map_service">
+                  <div className="px-4 py-2 text-green-800 hover:bg-green-50 transition-colors cursor-pointer">
+                    Nearby Healthcare Services
+                  </div>
+                </Link>
               </div>
             )}
           </div>

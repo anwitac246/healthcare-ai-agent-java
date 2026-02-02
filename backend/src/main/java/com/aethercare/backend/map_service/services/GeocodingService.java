@@ -1,6 +1,6 @@
 package com.aethercare.backend.map_service.services;
 
-import com.aethercare.backend.map_service.common.MapConstants;
+
 import com.aethercare.backend.map_service.models.dto.GeocodeResponse;
 import com.aethercare.backend.map_service.models.dto.Location;
 import lombok.RequiredArgsConstructor;

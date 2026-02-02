@@ -318,7 +318,7 @@ export default function MapPage() {
       
       <div className="flex-1 flex overflow-hidden mt-16">
         {/* Sidebar */}
-        <div className={`${showSidebar ? 'w-96' : 'w-0'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 overflow-hidden`}>
+        <div className={`${showSidebar ? 'w-96' : 'w-0'} bg-white border-r mt-10 border-gray-200 flex flex-col transition-all duration-300 overflow-hidden`}>
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Find Healthcare</h2>
             
@@ -409,7 +409,7 @@ export default function MapPage() {
         </div>
 
         {/* Main Map Area */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative mt-5">
           <button
             onClick={() => setShowSidebar(!showSidebar)}
             className="absolute top-4 left-4 z-1000 bg-white p-2 rounded-lg shadow-md hover:bg-gray-50 transition-colors border border-gray-200"
