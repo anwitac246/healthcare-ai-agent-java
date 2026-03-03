@@ -1,0 +1,9 @@
+groq:
+  api:
+    key: test-key
+    url: https://test-url
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/testdb
