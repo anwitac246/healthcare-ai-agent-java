@@ -204,14 +204,6 @@ This guarantees consistent Maven versions across machines.
 
 ---
 
-## 12. Next Planned Steps
 
-* Add Spring Security
-* Add Firebase Admin SDK
-* Implement Firebase ID token verification
-* Integrate MongoDB
-* Secure endpoints
-
----
 
 **This document exists so future-you does not suffer.**
